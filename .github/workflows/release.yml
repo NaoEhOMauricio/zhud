@@ -1,0 +1,65 @@
+name: Build e Publicar Release
+
+on:
+  push:
+    tags:
+      - 'v*'   # dispara em qualquer tag tipo v1.0.6, v2.0.0, etc.
+
+permissions:
+  contents: write   # necessário para criar releases
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      # ── Checkout ──────────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Python + backend ──────────────────────────────────────────────────────
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependencias Python
+        run: |
+          cd backend
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Compilar backend (PyInstaller)
+        run: |
+          cd backend
+          pyinstaller backend.spec --noconfirm --clean --distpath dist
+
+      # ── Node.js + frontend ────────────────────────────────────────────────────
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Instalar dependencias Node
+        run: |
+          cd frontend
+          npm install
+
+      - name: Build React (Vite)
+        run: |
+          cd frontend
+          npm run build
+
+      # ── Icone ─────────────────────────────────────────────────────────────────
+      - name: Gerar icone
+        run: |
+          pip install Pillow
+          python generate_icon.py
+
+      # ── Electron Build + Publicar no GitHub ───────────────────────────────────
+      - name: Build e publicar instalador Windows
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd frontend
+          npx electron-builder --win --x64 --publish always
