@@ -91,11 +91,20 @@ app.whenReady().then(async () => {
   createWindow()
 })
 
-app.on('window-all-closed', () => {
-  if (backendProcess) {
-    try { backendProcess.kill('SIGTERM') } catch {}
-    backendProcess = null
-  }
+async function shutdownBackend() {
+  if (!backendProcess) return
+  // 1. Ask backend to save state and shut down gracefully
+  try {
+    await fetch('http://127.0.0.1:8765/shutdown', { method: 'POST' })
+    await new Promise(res => setTimeout(res, 1200))   // wait for clean exit
+  } catch { /* backend already dead */ }
+  // 2. Force kill if still running
+  try { backendProcess.kill() } catch {}
+  backendProcess = null
+}
+
+app.on('window-all-closed', async () => {
+  await shutdownBackend()
   app.quit()
 })
 

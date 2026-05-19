@@ -729,6 +729,20 @@ async def setup_configure(body: dict):
     return {"status": "ok", "nickname": nick, "path": path}
 
 
+@app.post("/shutdown")
+async def shutdown_endpoint():
+    """Graceful shutdown — called by Electron before killing the process."""
+    await _close_session()
+    # Schedule shutdown after response is sent
+    async def _do_shutdown():
+        import asyncio
+        await asyncio.sleep(0.5)
+        import os, signal
+        os.kill(os.getpid(), signal.SIGINT)
+    asyncio.create_task(_do_shutdown())
+    return {"status": "shutting down"}
+
+
 @app.get("/debug/tables")
 async def debug_tables():
     """Show raw _active_tables content for troubleshooting."""
