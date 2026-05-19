@@ -1,6 +1,6 @@
 {
   "name": "zhud",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Poker HUD com analise em tempo real",
   "main": "electron.cjs",
   "scripts": {
@@ -60,7 +60,8 @@
     "publish": {
       "provider": "github",
       "owner": "NaoEhOMauricio",
-      "repo": "zhud"
+      "repo": "zhud",
+      "releaseType": "release"
     }
   }
 }
