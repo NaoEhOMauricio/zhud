@@ -11,10 +11,14 @@
       "PowerShell(gh --version 2>&1)",
       "PowerShell($env:PATH = [System.Environment]::GetEnvironmentVariable\\(\"PATH\",\"Machine\"\\) + \";\" + [System.Environment]::GetEnvironmentVariable\\(\"PATH\",\"User\"\\); gh --version 2>&1 | Select-Object -First 1)",
       "PowerShell(Stop-Process -Name \"gh\" -ErrorAction SilentlyContinue)",
-      "PowerShell(\"stopped\")"
+      "PowerShell(\"stopped\")",
+      "Bash(awk '{print $5, $9}')",
+      "Bash(git commit -m 'feat: v1.0.6 — primeiro deploy automatico via GitHub Actions *)",
+      "Bash(git tag *)"
     ],
     "additionalDirectories": [
-      "C:\\Users\\leona\\ZHud"
+      "C:\\Users\\leona\\ZHud",
+      "C:\\Users\\leona\\ZHud\\.github"
     ]
   }
 }
