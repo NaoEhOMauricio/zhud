@@ -477,7 +477,11 @@ async def delete_note(note_id: int):
 # ─── Active tables ────────────────────────────────────────────────────────────
 
 def _get_active_tables() -> list:
-    cutoff = datetime.utcnow() - timedelta(minutes=30)
+    # Use 12-hour window to handle timezone differences.
+    # PokerStars timestamps are in local time (BRT = UTC-3), but datetime.utcnow()
+    # is UTC. A 30-min window would incorrectly exclude BRT hands that are 3h "ahead".
+    # 12h safely covers any timezone while still excluding yesterday's hands.
+    cutoff = datetime.utcnow() - timedelta(hours=12)
     return [
         t for t in _active_tables.values()
         if datetime.fromisoformat(t["last_hand"]) > cutoff
