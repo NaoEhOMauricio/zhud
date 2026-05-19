@@ -7,13 +7,12 @@ let backendProcess = null
 
 // ── Backend startup (only in packaged mode) ───────────────────────────────────
 function startBackend() {
-  if (!app.isPackaged) return   // dev mode: backend started manually
+  if (!app.isPackaged) return
 
   const backendExe  = path.join(process.resourcesPath, 'backend', 'ZHud-backend.exe')
-  const userDataDir = app.getPath('userData')   // e.g. %APPDATA%\ZHud
+  const userDataDir = app.getPath('userData')
 
   console.log('[electron] Starting backend:', backendExe)
-  console.log('[electron] User data dir:',  userDataDir)
 
   try {
     backendProcess = spawn(backendExe, [], {
@@ -22,37 +21,30 @@ function startBackend() {
       detached: false,
       windowsHide: true,
     })
-
     backendProcess.stdout?.on('data', d => process.stdout.write('[backend] ' + d))
     backendProcess.stderr?.on('data', d => process.stderr.write('[backend] ' + d))
     backendProcess.on('error',  e  => console.error('[backend] Error:', e.message))
     backendProcess.on('exit',   code => console.log('[backend] Exited with code', code))
   } catch (e) {
     console.error('[backend] Failed to start:', e.message)
-    dialog.showErrorBox(
-      'ZHud — Erro ao iniciar backend',
-      `Não foi possível iniciar o backend.\n\nArquivo: ${backendExe}\nErro: ${e.message}`
-    )
+    dialog.showErrorBox('ZHud — Erro ao iniciar backend', `Erro: ${e.message}`)
   }
 }
 
-// ── Wait until backend is accepting connections ───────────────────────────────
 async function waitForBackend(url = 'http://127.0.0.1:8765/setup/status', maxWait = 15000) {
   const start = Date.now()
   while (Date.now() - start < maxWait) {
     try {
       const r = await fetch(url)
       if (r.ok) return true
-    } catch { /* not ready yet */ }
+    } catch {}
     await new Promise(res => setTimeout(res, 300))
   }
   return false
 }
 
-// ── Main window ───────────────────────────────────────────────────────────────
 function createWindow() {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize
-
   mainWindow = new BrowserWindow({
     width: 320,
     height: height,
@@ -78,27 +70,59 @@ function createWindow() {
   }
 }
 
+// ── Auto-updater — called AFTER window is ready ───────────────────────────────
+function setupAutoUpdater() {
+  if (!app.isPackaged) return
+  try {
+    const { autoUpdater } = require('electron-updater')
+    autoUpdater.logger = console
+    autoUpdater.autoDownload = true
+
+    autoUpdater.on('checking-for-update',  ()    => console.log('[updater] Checking...'))
+    autoUpdater.on('update-not-available', ()    => console.log('[updater] Up to date'))
+    autoUpdater.on('error',                (err) => console.error('[updater] Error:', err.message))
+
+    autoUpdater.on('update-available', (info) => {
+      console.log('[updater] Update available:', info.version)
+      mainWindow?.webContents.send('update-available')
+    })
+
+    autoUpdater.on('update-downloaded', (info) => {
+      console.log('[updater] Downloaded:', info.version)
+      mainWindow?.webContents.send('update-downloaded')
+    })
+
+    autoUpdater.checkForUpdates()
+      .catch(e => console.error('[updater] checkForUpdates failed:', e.message))
+
+  } catch (e) {
+    console.error('[updater] Setup failed:', e.message)
+  }
+}
+
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 app.whenReady().then(async () => {
   startBackend()
 
   if (app.isPackaged) {
-    console.log('[electron] Waiting for backend...')
     const ok = await waitForBackend()
-    if (!ok) console.warn('[electron] Backend did not respond in time — continuing anyway')
+    if (!ok) console.warn('[electron] Backend timeout — continuing anyway')
   }
 
   createWindow()
+
+  // Start auto-updater 5s after window is created (ensures renderer is ready)
+  mainWindow.webContents.once('did-finish-load', () => {
+    setTimeout(setupAutoUpdater, 5000)
+  })
 })
 
 async function shutdownBackend() {
   if (!backendProcess) return
-  // 1. Ask backend to save state and shut down gracefully
   try {
     await fetch('http://127.0.0.1:8765/shutdown', { method: 'POST' })
-    await new Promise(res => setTimeout(res, 1200))   // wait for clean exit
-  } catch { /* backend already dead */ }
-  // 2. Force kill if still running
+    await new Promise(res => setTimeout(res, 1200))
+  } catch {}
   try { backendProcess.kill() } catch {}
   backendProcess = null
 }
@@ -117,22 +141,3 @@ ipcMain.on('restart-to-update', () => {
     try { require('electron-updater').autoUpdater.quitAndInstall() } catch {}
   }
 })
-
-// ── Auto-updater (GitHub Releases) ───────────────────────────────────────────
-if (app.isPackaged) {
-  try {
-    const { autoUpdater } = require('electron-updater')
-    autoUpdater.logger = console
-    autoUpdater.checkForUpdatesAndNotify()
-
-    autoUpdater.on('update-available', () => {
-      mainWindow?.webContents.send('update-available')
-    })
-    autoUpdater.on('update-downloaded', () => {
-      mainWindow?.webContents.send('update-downloaded')
-    })
-  } catch (e) {
-    // electron-updater not available or no publish config — skip silently
-    console.log('[updater] Not configured:', e.message)
-  }
-}
