@@ -112,6 +112,11 @@ app.on('window-all-closed', async () => {
 ipcMain.on('set-always-on-top', (_, value) => mainWindow?.setAlwaysOnTop(value))
 ipcMain.on('minimize-window',   () => mainWindow?.minimize())
 ipcMain.on('close-window',      () => mainWindow?.close())
+ipcMain.on('restart-to-update', () => {
+  if (app.isPackaged) {
+    try { require('electron-updater').autoUpdater.quitAndInstall() } catch {}
+  }
+})
 
 // ── Auto-updater (GitHub Releases) ───────────────────────────────────────────
 if (app.isPackaged) {

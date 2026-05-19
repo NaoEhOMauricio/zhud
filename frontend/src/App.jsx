@@ -6,6 +6,7 @@ import ActiveTablePanel from './components/ActiveTablePanel'
 import SessionPanel from './components/SessionPanel'
 import TiltAlert from './components/TiltAlert'
 import SetupWizard from './components/SetupWizard'
+import UpdateBanner from './components/UpdateBanner'
 
 const API    = 'http://127.0.0.1:8765'
 const WS_URL = 'ws://127.0.0.1:8765/ws'
@@ -178,7 +179,7 @@ export default function App() {
       <div className="drag-region flex items-center justify-between px-3 py-2 bg-gray-900 border-b border-gray-800 flex-shrink-0">
         <div className="flex items-center gap-2">
           <span className="text-green-400 font-bold text-sm tracking-wider">Z<span className="text-white">Hud</span></span>
-          <span className="text-gray-700 text-xs">v1.0.7</span>
+          <span className="text-gray-700 text-xs">v1.0.8</span>
           <span className={`w-2 h-2 rounded-full flex-shrink-0 pulse-live ${connected ? 'bg-green-500' : 'bg-red-500'}`} />
         </div>
         <div className="flex items-center gap-1">
@@ -189,6 +190,9 @@ export default function App() {
           <button onClick={() => window.zhud?.close()}    className="text-gray-500 hover:text-red-400 text-xs px-2 py-0.5">✕</button>
         </div>
       </div>
+
+      {/* Update banner */}
+      <UpdateBanner />
 
       {/* Tilt alerts */}
       {tiltAlerts.length > 0 && <TiltAlert alerts={tiltAlerts} onDismiss={dismissTilt} />}

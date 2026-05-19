@@ -14,7 +14,8 @@
       "PowerShell(\"stopped\")",
       "Bash(awk '{print $5, $9}')",
       "Bash(git commit -m 'feat: v1.0.6 — primeiro deploy automatico via GitHub Actions *)",
-      "Bash(git tag *)"
+      "Bash(git tag *)",
+      "Bash(git commit -m 'feat: v1.0.8 — banner de atualizacao visivel + botao reiniciar *)"
     ],
     "additionalDirectories": [
       "C:\\Users\\leona\\ZHud",
