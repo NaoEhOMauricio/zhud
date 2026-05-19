@@ -57,10 +57,15 @@ export default function ActiveTablePanel({ tables, heroNick, onSelectPlayer }) {
     new Date(b.last_hand || 0) - new Date(a.last_hand || 0)
   )
 
-  // The most recently active table is "current"
+  // "Mesa Atual" = most recent table where the HERO is playing.
+  // Fallback to timestamp-only if hero not found in any table.
+  const heroInTable = sorted.find(t =>
+    (t.players_data || []).some(p => p.nickname === heroNick)
+  )
   const mostRecentTime = new Date(sorted[0]?.last_hand || 0)
-  const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000)
-  const currentTableName = mostRecentTime > fiveMinAgo ? sorted[0]?.table : null
+  const thirtyMinAgo  = new Date(Date.now() - 30 * 60 * 1000)
+  const currentTableName = heroInTable?.table
+    ?? (mostRecentTime > thirtyMinAgo ? sorted[0]?.table : null)
 
   return (
     <div className="flex-1 overflow-y-auto">
