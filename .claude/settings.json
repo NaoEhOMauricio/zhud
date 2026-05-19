@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\leona\\\\ZHud\\\\frontend\\\\dist-electron\" | Where-Object {$_.Extension -eq \".exe\"} | Select-Object Name, @{N='Size_MB';E={[math]::Round\\($_.Length/1MB,1\\)}})",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\leona\\\\ZHud\\\\frontend\\\\dist-electron\" | Select-Object Name, @{N='MB';E={[math]::Round\\($_.Length/1MB,1\\)}})",
+      "Bash(git init *)",
+      "Bash(git remote *)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\leona\\ZHud"
+    ]
+  }
+}

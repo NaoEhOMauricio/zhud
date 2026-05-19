@@ -1,0 +1,22 @@
+# Python
+backend/__pycache__/
+backend/*.pyc
+backend/dist/
+backend/build/
+backend/*.spec.bak
+
+# Node / Electron
+frontend/node_modules/
+frontend/dist/
+frontend/dist-electron/
+
+# Database & config (dados locais do usuário)
+backend/zhud.db
+backend/config.json
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
