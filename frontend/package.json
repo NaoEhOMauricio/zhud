@@ -1,6 +1,6 @@
 {
   "name": "zhud",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Poker HUD com analise em tempo real",
   "main": "electron.cjs",
   "scripts": {
