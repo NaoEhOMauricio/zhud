@@ -44,10 +44,12 @@ function TipCard({ tip, defaultOpen = false }) {
 }
 
 export default function RangeTips() {
-  const [position, setPosition] = useState(null)   // null = waiting for detection
-  const [stackBb,  setStackBb]  = useState(null)
-  const [autoPos,  setAutoPos]  = useState(null)   // last auto-detected position
-  const [autoStack,setAutoStack]= useState(null)
+  const [position,  setPosition]  = useState(null)   // null = waiting for detection
+  const [stackBb,   setStackBb]   = useState(null)
+  const [autoPos,   setAutoPos]   = useState(null)   // last auto-detected position
+  const [autoStack, setAutoStack] = useState(null)
+  const [posLabel,  setPosLabel]  = useState(null)   // specific label e.g. "UTG+1"
+  const [nPlayers,  setNPlayers]  = useState(6)
   const [data,     setData]     = useState(null)
   const [loading,  setLoading]  = useState(false)
   const [manual,   setManual]   = useState(false)  // user clicked manual override
@@ -61,6 +63,8 @@ export default function RangeTips() {
       const rawPos = d.hero_next_pos || d.hero_pos
       const pos    = POS_MAP[rawPos?.toUpperCase?.()] || null
       const stack  = d.hero_stack ? Math.round(d.hero_stack) : null
+      const label  = d.hero_next_label || d.hero_pos_label || null
+      const np     = d.n_players || 6
       if (pos) {
         setAutoPos(pos)
         if (!manual) setPosition(pos)
@@ -69,6 +73,8 @@ export default function RangeTips() {
         setAutoStack(stack)
         if (!manual) setStackBb(stack)
       }
+      if (label) setPosLabel(label)
+      setNPlayers(np)
     } catch {}
   }, [manual])
 
@@ -83,11 +89,12 @@ export default function RangeTips() {
   useEffect(() => {
     if (!position || !stackBb) return
     setLoading(true)
-    fetch(`${API}/range-tips?position=${position}&stack_bb=${stackBb}`)
+    const label = encodeURIComponent(posLabel || '')
+    fetch(`${API}/range-tips?position=${position}&stack_bb=${stackBb}&n_players=${nPlayers}&pos_label=${label}`)
       .then(r => r.json())
       .then(d => { setData(d); setLoading(false) })
       .catch(() => setLoading(false))
-  }, [position, stackBb])
+  }, [position, stackBb, nPlayers, posLabel])
 
   // Waiting for first detection
   if (!position && !manual) {
@@ -115,8 +122,13 @@ export default function RangeTips() {
               <span className="w-1.5 h-1.5 rounded-full bg-green-500 flex-shrink-0" />
               <span className="text-xs text-gray-500">Posição estimada:</span>
               <span className={`text-sm font-bold ${POS_COLOR[position]}`}>
-                {POSITIONS.find(p => p.value === position)?.label}
+                {posLabel || POSITIONS.find(p => p.value === position)?.label}
               </span>
+              {nPlayers !== 6 && (
+                <span className="text-xs text-gray-600 bg-gray-800 px-1.5 rounded">
+                  {nPlayers}max
+                </span>
+              )}
               <span className="text-xs text-gray-600">·</span>
               <span className="text-xs text-gray-400 font-semibold">{stackBb}BB</span>
             </div>
@@ -217,7 +229,7 @@ export default function RangeTips() {
               data.is_ip ? 'border-green-800' : 'border-gray-700'
             }`}>
               <div className="flex items-center justify-between mb-1">
-                <span className={`text-xs font-bold ${POS_COLOR[position]}`}>{data.label}</span>
+                <span className={`text-xs font-bold ${POS_COLOR[position]}`}>{data.pos_label || data.label}</span>
                 <span className={`text-sm font-black ${data.is_ip ? 'text-green-400' : 'text-gray-300'}`}>
                   {data.open_pct}%
                 </span>

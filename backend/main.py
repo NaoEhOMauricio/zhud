@@ -1074,13 +1074,16 @@ async def live_alerts_endpoint():
         hero_nick=hero,
         table_state=table_state,
     )
-    # Add next-hand predicted position so frontend can show forward-looking range tips
-    result["hero_next_pos"] = table_state.get("hero_next_pos")
+    # Add predicted-position fields so frontend shows exact label + adjusts range tips
+    result["hero_next_pos"]   = table_state.get("hero_next_pos")
+    result["hero_next_label"] = table_state.get("hero_next_label")
+    result["n_players"]       = table_state.get("n_players", 6)
     return result
 
 
 @app.get("/range-tips")
-async def range_tips_endpoint(position: str = "", stack_bb: float = 50):
+async def range_tips_endpoint(position: str = "", stack_bb: float = 50,
+                               n_players: int = 6, pos_label: str = ""):
     """
     Returns preflop range tips for the hero's current position.
     Adjusts for opponents at the active table.
@@ -1118,6 +1121,8 @@ async def range_tips_endpoint(position: str = "", stack_bb: float = 50):
         opponents=opponents,
         hero_stats=hero_stats,
         hero_stack_bb=stack_bb,
+        n_players=n_players,
+        pos_label=pos_label,
     )
 
 

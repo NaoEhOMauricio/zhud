@@ -132,15 +132,31 @@ MISTAKES = {
 
 
 def get_range_tips(hero_position: str, opponents: list, hero_stats: dict = None,
-                   hero_stack_bb: float = 50) -> dict:
+                   hero_stack_bb: float = 50, n_players: int = 6,
+                   pos_label: str = "") -> dict:
     """
     Retorna dicas de range por posição + ajustes vs oponentes específicos.
+    n_players: tamanho real da mesa (ajusta ranges para full-ring).
+    pos_label: label específico (ex: "UTG+1") para exibição.
     """
     pos = (hero_position or "ep").lower()
     rng = OPEN_RANGES.get(pos, OPEN_RANGES["ep"])
 
+    # ── Ajuste para full-ring (7-9max): EP é mais apertado ────────────────────
+    full_ring_note = None
+    if n_players >= 7 and pos == "ep":
+        full_ring_note = {
+            "icon": "📐",
+            "title": f"Mesa {n_players} jogadores — feche range EP",
+            "body": "Full-ring: UTG abre para 6-8 jogadores. Reduza para ~12%: JJ+, AQo+, AJs+, KQs.",
+            "detail": "Mãos como TT e AJo ficam marginais. KQo, QJs só com stack profundo.",
+        }
+
     tips     = []
     warnings = []
+
+    if full_ring_note:
+        warnings.append(full_ring_note)
 
     # ── 1. Dica base de abertura ──────────────────────────────────────────────
     if pos != "bb":
@@ -266,14 +282,23 @@ def get_range_tips(hero_position: str, opponents: list, hero_stats: dict = None,
             "detail": "OOP você age antes do adversário. Simplifique: não tente linhas criativas sem posição.",
         })
 
+    # Adjust open_pct display for full-ring EP
+    display_pct = rng["pct"]
+    if n_players >= 7 and pos == "ep":
+        display_pct = 12
+    elif n_players >= 7 and pos == "hj":
+        display_pct = max(rng["pct"] - 4, 14)
+
     return {
         "position":    pos,
+        "pos_label":   pos_label or rng["label"],
         "label":       rng["label"],
-        "open_pct":    rng["pct"],
+        "open_pct":    display_pct,
         "open_hands":  rng["hands"],
         "hand_groups": rng.get("groups", []),
         "tips":        tips[:5],
-        "warnings":    warnings[:3],
+        "warnings":    warnings[:4],
         "bb_defense":  BB_DEFENSE if pos == "bb" else None,
         "is_ip":       pos in IP_POSITIONS,
+        "n_players":   n_players,
     }
