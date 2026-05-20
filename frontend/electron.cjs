@@ -117,27 +117,49 @@ app.whenReady().then(async () => {
   })
 })
 
+let _shuttingDown = false
+
 async function shutdownBackend() {
-  if (!backendProcess) return
+  if (!backendProcess || _shuttingDown) return
+  _shuttingDown = true
+  const pid = backendProcess.pid
+
+  // 1. Ask the backend to shut down gracefully
   try {
     await fetch('http://127.0.0.1:8765/shutdown', { method: 'POST' })
-    await new Promise(res => setTimeout(res, 1200))
   } catch {}
-  try { backendProcess.kill() } catch {}
+
+  // 2. Wait for process to exit on its own (up to 2.5s)
+  await new Promise(res => {
+    const t = setTimeout(res, 2500)
+    backendProcess?.once('exit', () => { clearTimeout(t); res() })
+  })
+
+  // 3. Force-kill the entire process tree (Windows: PyInstaller spawns children)
+  if (pid) {
+    try {
+      const { execSync } = require('child_process')
+      execSync(`taskkill /F /T /PID ${pid}`, { stdio: 'ignore' })
+    } catch {}
+  }
+  try { backendProcess?.kill('SIGKILL') } catch {}
   backendProcess = null
 }
 
-app.on('window-all-closed', async () => {
-  await shutdownBackend()
-  app.quit()
+// will-quit fires for all exit paths (close button, update, OS shutdown)
+app.on('will-quit', (event) => {
+  if (!backendProcess) return
+  event.preventDefault()
+  shutdownBackend().then(() => app.exit(0))
 })
 
 // ── IPC ───────────────────────────────────────────────────────────────────────
 ipcMain.on('set-always-on-top', (_, value) => mainWindow?.setAlwaysOnTop(value))
 ipcMain.on('minimize-window',   () => mainWindow?.minimize())
 ipcMain.on('close-window',      () => mainWindow?.close())
-ipcMain.on('restart-to-update', () => {
-  if (app.isPackaged) {
-    try { require('electron-updater').autoUpdater.quitAndInstall() } catch {}
-  }
+ipcMain.on('restart-to-update', async () => {
+  if (!app.isPackaged) return
+  // Backend must be fully stopped before the installer can replace the .exe
+  await shutdownBackend()
+  try { require('electron-updater').autoUpdater.quitAndInstall(false, true) } catch {}
 })
