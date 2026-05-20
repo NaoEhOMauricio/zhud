@@ -7,6 +7,7 @@ import BetSizingBar from './BetSizingBar'
 import PositionStats from './PositionStats'
 import NotesEditor from './NotesEditor'
 import HandHighlight from './HandHighlight'
+import EncounterHistory from './EncounterHistory'
 
 const CLUSTER_COLORS = [
   'text-blue-300','text-cyan-300','text-green-300',
@@ -26,6 +27,7 @@ export default function PlayerCard({ player, onClose }) {
 
   const tabs = [
     { id: 'stats',    label: 'Stats' },
+    { id: 'history',  label: 'Vs Você' },
     { id: 'position', label: 'Posição' },
     { id: 'sizing',   label: 'Sizing' },
     { id: 'notes',    label: 'Notas' },
@@ -73,6 +75,7 @@ export default function PlayerCard({ player, onClose }) {
         ))}
       </div>
 
+      {tab === 'history'  && <div className="px-3 py-2"><EncounterHistory nickname={p.nickname} /></div>}
       {tab === 'stats' && (
         <div className="px-3 py-2">
           <StatGrid stats={p} trends={p.trends || {}} />

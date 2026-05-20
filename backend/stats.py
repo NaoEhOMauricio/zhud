@@ -101,7 +101,7 @@ def process_hand(hand: ParsedHand) -> dict:
 
     # Attach per-hand snapshot (includes game_type + player count for context-aware analysis)
     gt = "T" if hand.game_type == "tournament" else "C"
-    n_players = len(players)
+    n_players = len(player_names)
     for name in player_names:
         d = updates[name]
         updates[name]["_recent_snapshot"] = _make_snapshot(

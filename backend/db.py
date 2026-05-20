@@ -211,6 +211,17 @@ class NotableHand(Base):
     hand_time: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class PlayerEncounter(Base):
+    """Tracks how many hands the hero has played at the same table as a given villain."""
+    __tablename__ = "player_encounters"
+
+    id: Mapped[int]           = mapped_column(Integer, primary_key=True)
+    hero_nick: Mapped[str]    = mapped_column(String(100), index=True)
+    villain_nick: Mapped[str] = mapped_column(String(100), index=True)
+    hands_together: Mapped[int] = mapped_column(Integer, default=0)
+    last_seen: Mapped[datetime]  = mapped_column(DateTime, default=datetime.utcnow)
+
+
 async def init_db():
     """Create tables and run auto-migration for schema upgrades."""
     async with engine.begin() as conn:
@@ -258,3 +269,12 @@ async def init_db():
             if col not in existing:
                 await conn.execute(text(f"ALTER TABLE player_stats ADD COLUMN {col} {defn}"))
                 print(f"[db] migration: added column {col}")
+
+        # Ensure unique index on player_encounters (hero_nick, villain_nick)
+        try:
+            await conn.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ix_encounter_pair "
+                "ON player_encounters (hero_nick, villain_nick)"
+            ))
+        except Exception:
+            pass

@@ -15,7 +15,7 @@ from sqlalchemy import select, desc
 
 from db import (
     init_db, AsyncSessionLocal,
-    PlayerStats, PlayerNote, Session, NotableHand,
+    PlayerStats, PlayerNote, Session, NotableHand, PlayerEncounter,
 )
 from behavior import analyze_player
 from cluster import run_clustering
@@ -230,8 +230,14 @@ async def _queue_processor():
                     "data": tables_payload,
                 })
 
-            # Live exploit alert for hero — fires after every new hand
+            # Encounter tracking — record that hero sat with each villain
             hero_nick = cfg_module.get_hero()
+            if hero_nick and hand_players and hero_nick in hand_players:
+                villains = [n for n in hand_players if n != hero_nick]
+                if villains:
+                    asyncio.create_task(_record_encounters(hero_nick, villains))
+
+            # Live exploit alert for hero — fires after every new hand
             hh_path   = cfg_module.get_hh_path()
             if hero_nick and hh_path and hand_players and hero_nick in hand_players:
                 try:
@@ -305,6 +311,29 @@ async def _save_notable_hand(info: dict):
             await session.commit()
     except Exception as exc:
         print(f"[notable] Error: {exc}")
+
+
+async def _record_encounters(hero_nick: str, villains: list[str]):
+    """Upsert the hands_together counter for each hero-villain pair."""
+    try:
+        async with AsyncSessionLocal() as session:
+            now = datetime.utcnow()
+            for villain in villains:
+                result = await session.execute(
+                    select(PlayerEncounter)
+                    .where(PlayerEncounter.hero_nick == hero_nick)
+                    .where(PlayerEncounter.villain_nick == villain)
+                )
+                enc = result.scalar_one_or_none()
+                if enc is None:
+                    enc = PlayerEncounter(hero_nick=hero_nick, villain_nick=villain,
+                                         hands_together=0)
+                    session.add(enc)
+                enc.hands_together += 1
+                enc.last_seen = now
+            await session.commit()
+    except Exception as exc:
+        print(f"[encounter] Error: {exc}")
 
 
 async def _run_cluster_pass():
@@ -728,6 +757,99 @@ async def player_hands(nickname: str, limit: int = 20):
         "actions":  json.loads(h.actions_json),
         "time":     h.hand_time.isoformat(),
     } for h in hands]
+
+
+# ─── Encounter history ────────────────────────────────────────────────────────
+
+@app.get("/player/{nickname}/vs-hero")
+async def player_vs_hero(nickname: str):
+    hero = cfg_module.get_hero()
+    if not hero:
+        return {"error": "Hero nao configurado"}
+
+    async with AsyncSessionLocal() as session:
+        enc_result = await session.execute(
+            select(PlayerEncounter)
+            .where(PlayerEncounter.hero_nick == hero)
+            .where(PlayerEncounter.villain_nick == nickname)
+        )
+        enc = enc_result.scalar_one_or_none()
+
+        p_result = await session.execute(
+            select(PlayerStats).where(PlayerStats.nickname == nickname)
+        )
+        p = p_result.scalar_one_or_none()
+
+    hands_together = enc.hands_together if enc else 0
+    last_seen = enc.last_seen.isoformat() if enc and enc.last_seen else None
+
+    # Build exploit insights from their stats
+    insights = []
+    if p:
+        s = p.to_stats_dict()
+        # Fold to 3bet — prime target for light 3bets
+        if s.get("fold_to_3bet", 0) >= 65:
+            insights.append({
+                "icon": "🎯",
+                "text": f"Faz fold a 3bets {s['fold_to_3bet']}% — 3bete light contra ele",
+                "strength": "high",
+            })
+        elif s.get("fold_to_3bet", 0) <= 30 and (s.get("fold_to_3bet_opp", 0) or 0) >= 5:
+            insights.append({
+                "icon": "⚠️",
+                "text": f"Não faz fold a 3bets ({s['fold_to_3bet']}%) — evite 3bets bluff",
+                "strength": "warning",
+            })
+        # CBET fold — good spot to call cbets or raise
+        if s.get("fold_to_cbet", 0) >= 65:
+            insights.append({
+                "icon": "🃏",
+                "text": f"Faz fold a cbets {s['fold_to_cbet']}% — raise float com draws",
+                "strength": "high",
+            })
+        # Steal tendency
+        if s.get("steal", 0) >= 55:
+            insights.append({
+                "icon": "🏴",
+                "text": f"Rouba muito dos blinds ({s['steal']}%) — 3bete nos blinds",
+                "strength": "high",
+            })
+        # Calling station
+        from behavior import classify_profile
+        profile = classify_profile(
+            s.get("vpip", 0), s.get("pfr", 0), s.get("af", 0), s.get("hands", 0)
+        )
+        if profile in ("Calling Station", "Passivo"):
+            insights.append({
+                "icon": "💰",
+                "text": "Calling Station — valor máximo, sem bluffs",
+                "strength": "high",
+            })
+        # Tilt-prone (high recent VPIP)
+        recent = s.get("recent_hands", [])
+        if len(recent) >= 10:
+            recent_vpip = sum(h.get("v", 0) for h in recent[-10:]) / 10 * 100
+            if recent_vpip >= 70:
+                insights.append({
+                    "icon": "🔥",
+                    "text": f"VPIP recente {recent_vpip:.0f}% — possível tilt",
+                    "strength": "warning",
+                })
+        # Donk bet tell
+        if s.get("donk_bet", 0) >= 30 and (s.get("donk_bet_opp", 0) or 0) >= 5:
+            insights.append({
+                "icon": "🎲",
+                "text": f"Donk bet frequente ({s['donk_bet']}%) — costuma ter valor ao donkar",
+                "strength": "info",
+            })
+
+    return {
+        "villain":       nickname,
+        "hero":          hero,
+        "hands_together": hands_together,
+        "last_seen":     last_seen,
+        "insights":      insights,
+    }
 
 
 # ─── Hero ─────────────────────────────────────────────────────────────────────
