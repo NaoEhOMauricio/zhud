@@ -107,22 +107,27 @@ export default function RangeTips() {
 
       {/* Auto-detected badge OR manual mode selector */}
       {!manual && autoPos ? (
-        <div className="flex items-center justify-between bg-gray-900 rounded-lg px-3 py-2 border border-gray-800">
-          <div className="flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-green-500 flex-shrink-0" />
-            <span className="text-xs text-gray-500">Posição detectada:</span>
-            <span className={`text-sm font-bold ${POS_COLOR[position]}`}>
-              {POSITIONS.find(p => p.value === position)?.label}
-            </span>
-            <span className="text-xs text-gray-600">·</span>
-            <span className="text-xs text-gray-400 font-semibold">{stackBb}BB</span>
+        <div className="bg-gray-900 rounded-lg px-3 py-2 border border-gray-800">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500 flex-shrink-0" />
+              <span className="text-xs text-gray-500">Posição estimada:</span>
+              <span className={`text-sm font-bold ${POS_COLOR[position]}`}>
+                {POSITIONS.find(p => p.value === position)?.label}
+              </span>
+              <span className="text-xs text-gray-600">·</span>
+              <span className="text-xs text-gray-400 font-semibold">{stackBb}BB</span>
+            </div>
+            <button
+              onClick={() => setManual(true)}
+              className="text-xs text-gray-600 hover:text-gray-400 underline"
+            >
+              Editar
+            </button>
           </div>
-          <button
-            onClick={() => setManual(true)}
-            className="text-xs text-gray-600 hover:text-gray-400 underline"
-          >
-            Editar
-          </button>
+          <div className="text-xs text-gray-700 mt-0.5">
+            Baseado na mão anterior — use enquanto a próxima mão começa
+          </div>
         </div>
       ) : (
         /* Manual selector */
@@ -173,6 +178,37 @@ export default function RangeTips() {
 
       {data && !loading && (
         <>
+          {/* Hand action groups — "olhei as cartas, o que faço?" */}
+          {(data.hand_groups || []).length > 0 && (
+            <div>
+              <div className="text-xs text-gray-500 uppercase tracking-wider mb-1.5 px-0.5">
+                O que fazer com cada mão
+              </div>
+              <div className="space-y-1">
+                {data.hand_groups.map((g, i) => {
+                  const colors = {
+                    red:    { bar: 'bg-red-500',    label: 'text-red-300',    bg: 'bg-red-950/50 border-red-900' },
+                    orange: { bar: 'bg-orange-400', label: 'text-orange-300', bg: 'bg-orange-950/50 border-orange-900' },
+                    yellow: { bar: 'bg-yellow-500', label: 'text-yellow-300', bg: 'bg-yellow-950/30 border-yellow-900/50' },
+                    blue:   { bar: 'bg-blue-400',   label: 'text-blue-300',   bg: 'bg-blue-950/40 border-blue-900' },
+                    gray:   { bar: 'bg-gray-600',   label: 'text-gray-500',   bg: 'bg-gray-900 border-gray-800' },
+                  }[g.color] || { bar: 'bg-gray-600', label: 'text-gray-400', bg: 'bg-gray-900 border-gray-800' }
+                  return (
+                    <div key={i} className={`rounded border ${colors.bg} overflow-hidden`}>
+                      <div className="flex items-start gap-2 px-2.5 py-2">
+                        <div className={`w-1 flex-shrink-0 rounded-full mt-0.5 self-stretch min-h-3 ${colors.bar}`} />
+                        <div className="flex-1 min-w-0">
+                          <div className={`text-xs font-bold leading-tight ${colors.label}`}>{g.label}</div>
+                          <div className="text-xs text-gray-400 mt-0.5 leading-snug">{g.hands}</div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Open range summary */}
           {data.open_pct > 0 && (
             <div className={`rounded-lg px-3 py-2 bg-gray-900 border ${

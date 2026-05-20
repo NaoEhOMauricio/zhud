@@ -12,6 +12,12 @@ OPEN_RANGES = {
         "hands": "TT+, AQo+, AJs+, KQs",
         "tip": "UTG você abre para 5 jogadores. Apenas mãos que toleram 3bet e jogam bem OOP.",
         "sizing": "2.5x (3x se stack < 30BB)",
+        "groups": [
+            {"label": "Abre + re-raise (4bet)",    "color": "red",    "hands": "KK+, AKs"},
+            {"label": "Abre + chama 3bet",          "color": "orange", "hands": "QQ, JJ, TT, AKo, AQs"},
+            {"label": "Abre + faz fold a 3bet",     "color": "yellow", "hands": "AJs, KQs"},
+            {"label": "Fora do range — fold",       "color": "gray",   "hands": "Qualquer outra mão"},
+        ],
     },
     "hj": {
         "pct": 20,
@@ -19,6 +25,12 @@ OPEN_RANGES = {
         "hands": "TT+, AJo+, A9s+, KTo+, KJs, QJs, JTs",
         "tip": "HJ: range intermediário. Respeite CO e BTN atrás que podem 3bet.",
         "sizing": "2.5x",
+        "groups": [
+            {"label": "Abre + 4bet",                "color": "red",    "hands": "KK+, AKs"},
+            {"label": "Abre + chama 3bet",          "color": "orange", "hands": "QQ, JJ, TT, AKo, AQo"},
+            {"label": "Abre + fold a 3bet",         "color": "yellow", "hands": "99, AJo, A9s+, KTo+, KJs, QJs, JTs"},
+            {"label": "Fora do range — fold",       "color": "gray",   "hands": "Suited connectors baixos, Kxo, pares <99"},
+        ],
     },
     "co": {
         "pct": 30,
@@ -26,6 +38,12 @@ OPEN_RANGES = {
         "hands": "99+, ATo+, A8s+, KJo+, K9s+, QJo, QTs+, JTs, T9s",
         "tip": "CO é sua segunda melhor posição. Abra firme — se BTN não 3betou você nos últimos limites, abra mais.",
         "sizing": "2.5x",
+        "groups": [
+            {"label": "Abre + 4bet",                "color": "red",    "hands": "KK+, AKs, AKo"},
+            {"label": "Abre + chama 3bet",          "color": "orange", "hands": "QQ, JJ, TT, 99, AQo, AJs"},
+            {"label": "Abre + fold a 3bet",         "color": "yellow", "hands": "ATo, A8s+, KJo+, K9s+, QJo, QTs+, JTs, T9s"},
+            {"label": "Fora do range — fold",       "color": "gray",   "hands": "88-, K8s-, suited connectors <T9s, Q8o-"},
+        ],
     },
     "btn": {
         "pct": 45,
@@ -33,6 +51,12 @@ OPEN_RANGES = {
         "hands": "Todos pares, Ax, Kx, Q5s+, Q9o+, J6s+, JTo, T7s+, T9o, 97s+, 87s, 76s, 65s, 54s",
         "tip": "BTN: você terá posição por toda a mão. Abra muito largo vs SB/BB passivos. Reduza vs 3-bettors frequentes.",
         "sizing": "2.0-2.5x",
+        "groups": [
+            {"label": "Abre + 4bet se 3betado",     "color": "red",    "hands": "KK+, AKs, AKo, QQ"},
+            {"label": "Abre + chama 3bet",          "color": "orange", "hands": "JJ, TT, 99, AQo, AJs+, KQs"},
+            {"label": "Abre + fold a 3bet",         "color": "yellow", "hands": "88-22, ATo, A2s+, KJo, K5s+, QJs, JTs, T9s, 98s, 87s"},
+            {"label": "Abre largo (vs passivos)",   "color": "blue",   "hands": "Q5s+, Q9o+, J6s+, T7s+, 76s, 65s, 54s"},
+        ],
     },
     "sb": {
         "pct": 35,
@@ -40,6 +64,12 @@ OPEN_RANGES = {
         "hands": "Pares, Ax, KTs+, KJo+, QJs, JTs, T9s, 98s",
         "tip": "SB vs apenas BB: abra com força. Use sizing maior (3x) pois jogará OOP por toda a mão.",
         "sizing": "3x (OOP sempre merece raise maior)",
+        "groups": [
+            {"label": "Abre + 4bet",                "color": "red",    "hands": "KK+, AKs, AKo"},
+            {"label": "Abre + chama 3bet",          "color": "orange", "hands": "QQ, JJ, TT, AQo, AJs"},
+            {"label": "Abre + fold a 3bet (OOP)",   "color": "yellow", "hands": "99-22, ATo, A2s+, KTs+, KJo+, QJs, JTs, T9s, 98s"},
+            {"label": "Fora do range — fold",       "color": "gray",   "hands": "Suited connectors baixos, K9o-, Q9o-"},
+        ],
     },
     "bb": {
         "pct": 0,
@@ -47,6 +77,12 @@ OPEN_RANGES = {
         "hands": "Definido pelos pot odds do raise",
         "tip": "BB: você já investiu 1BB. Pot odds permitem defender muito mais do que intuitivo. Não over-fold.",
         "sizing": "—",
+        "groups": [
+            {"label": "3bet (re-raise)",             "color": "red",    "hands": "KK+, AKs, QQ (valor) + A5s, A4s, KJs (bluff)"},
+            {"label": "Chama e defende",             "color": "orange", "hands": "JJ-22, AQo-A2o, KTo+, QJo, suited connectors"},
+            {"label": "Chama vs 2BB, fold vs 4BB+", "color": "yellow", "hands": "Mãos médias: Q8o, J7s, 96s, 85s"},
+            {"label": "Fold mesmo no BB",            "color": "gray",   "hands": "72o, 83o, 92o e lixo extremo"},
+        ],
     },
 }
 
@@ -231,12 +267,13 @@ def get_range_tips(hero_position: str, opponents: list, hero_stats: dict = None,
         })
 
     return {
-        "position":   pos,
-        "label":      rng["label"],
-        "open_pct":   rng["pct"],
-        "open_hands": rng["hands"],
-        "tips":       tips[:5],
-        "warnings":   warnings[:3],
-        "bb_defense": BB_DEFENSE if pos == "bb" else None,
-        "is_ip":      pos in IP_POSITIONS,
+        "position":    pos,
+        "label":       rng["label"],
+        "open_pct":    rng["pct"],
+        "open_hands":  rng["hands"],
+        "hand_groups": rng.get("groups", []),
+        "tips":        tips[:5],
+        "warnings":    warnings[:3],
+        "bb_defense":  BB_DEFENSE if pos == "bb" else None,
+        "is_ip":       pos in IP_POSITIONS,
     }
