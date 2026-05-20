@@ -24,6 +24,7 @@ import config as cfg_module
 from hero_analysis import analyze_hero
 from push_fold import get_recommendation, POSITION_ORDER, POSITION_LABELS
 from range_advisor import get_range_tips
+from exploit_alerts import get_live_alerts, table_quality
 
 DEFAULT_HH_PATH = str(Path.home() / "AppData" / "Local" / "PokerStars" / "HandHistory")
 
@@ -801,6 +802,52 @@ async def shutdown_endpoint():
         os.kill(os.getpid(), signal.SIGINT)
     asyncio.create_task(_do_shutdown())
     return {"status": "shutting down"}
+
+
+@app.get("/live-alerts")
+async def live_alerts_endpoint(position: str = "", stack_bb: float = 40):
+    """
+    Returns live exploit alerts for the current hand situation.
+    Position and stack are provided by the frontend (user selects).
+    """
+    hero = cfg_module.get_hero()
+    tables = _get_active_tables()
+
+    table_players_with_stats = []
+    if tables and hero:
+        hero_table = next(
+            (t for t in tables if hero in t.get("players", [])),
+            tables[0] if tables else None,
+        )
+        if hero_table:
+            async with AsyncSessionLocal() as session:
+                for nick in hero_table.get("players", []):
+                    r = await session.execute(
+                        select(PlayerStats).where(PlayerStats.nickname == nick)
+                    )
+                    p = r.scalar_one_or_none()
+                    is_hero = nick == hero
+                    if p:
+                        s = p.to_stats_dict()
+                        a = analyze_player(s)
+                        table_players_with_stats.append({
+                            **s, **a,
+                            "is_hero": is_hero,
+                            "position": "",  # position filled by client
+                        })
+                    else:
+                        table_players_with_stats.append({
+                            "nickname": nick,
+                            "hands": 0,
+                            "is_hero": is_hero,
+                        })
+
+    return get_live_alerts(
+        hero_pos=position.lower(),
+        hero_stack_bb=stack_bb,
+        table_players=table_players_with_stats,
+        hero_nick=hero,
+    )
 
 
 @app.get("/range-tips")

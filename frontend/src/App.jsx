@@ -7,6 +7,7 @@ import SessionPanel from './components/SessionPanel'
 import TiltAlert from './components/TiltAlert'
 import SetupWizard from './components/SetupWizard'
 import UpdateBanner from './components/UpdateBanner'
+import LiveAlerts from './components/LiveAlerts'
 
 const API    = 'http://127.0.0.1:8765'
 const WS_URL = 'ws://127.0.0.1:8765/ws'
@@ -155,10 +156,11 @@ export default function App() {
   }, [view, fetchActiveTables])
 
   const TABS = [
-    { id: 'table',   label: '🃏 Mesa' },
-    { id: 'players', label: '👥 Jogadores' },
-    { id: 'hero',    label: '👤 Eu' },
-    { id: 'session', label: '📊 Sessão' },
+    { id: 'table',   label: '🃏 Mesa'     },
+    { id: 'alerts',  label: '🎯 Alertas'  },
+    { id: 'players', label: '👥 Players'  },
+    { id: 'hero',    label: '👤 Eu'       },
+    { id: 'session', label: '📊 Sessão'   },
   ]
 
   const displayList = search.length >= 2 ? searchResults : recentPlayers
@@ -179,7 +181,7 @@ export default function App() {
       <div className="drag-region flex items-center justify-between px-3 py-2 bg-gray-900 border-b border-gray-800 flex-shrink-0">
         <div className="flex items-center gap-2">
           <span className="text-green-400 font-bold text-sm tracking-wider">Z<span className="text-white">Hud</span></span>
-          <span className="text-gray-700 text-xs">v1.1.0</span>
+          <span className="text-gray-700 text-xs">v1.2.0</span>
           <span className={`w-2 h-2 rounded-full flex-shrink-0 pulse-live ${connected ? 'bg-green-500' : 'bg-red-500'}`} />
         </div>
         <div className="flex items-center gap-1">
@@ -292,6 +294,13 @@ export default function App() {
               {connected ? 'Carregando...' : 'Conectando...'}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ══ ALERTAS AO VIVO ══════════════════════════════════════════════════ */}
+      {view === 'alerts' && (
+        <div className="flex-1 overflow-y-auto">
+          <LiveAlerts />
         </div>
       )}
 
