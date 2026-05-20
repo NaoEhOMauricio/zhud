@@ -1,9 +1,56 @@
 const { app, BrowserWindow, screen, ipcMain, dialog } = require('electron')
 const path  = require('path')
-const { spawn } = require('child_process')
+const { spawn, exec } = require('child_process')
 
 let mainWindow
 let backendProcess = null
+let _lastReportedTable = null
+
+// ── PokerStars window detection ───────────────────────────────────────────────
+// Reads the FOREGROUND window title every 2s.
+// If it's a PokerStars game window, extracts the table name and tells the backend.
+// Title format: "... - Torneio 4001866684 Mesa 1 - Logado como NaoEOMauricio - Mão #3/3"
+// Cash format:  "... - Mesa 12345678 - Logado como NaoEOMauricio"
+const PS_CMD = String.raw`
+Add-Type -TypeDefinition @'
+using System; using System.Runtime.InteropServices; using System.Text;
+public class U32 {
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+}
+'@
+$h = [U32]::GetForegroundWindow(); $s = New-Object System.Text.StringBuilder(512)
+[U32]::GetWindowText($h, $s, 512); $s.ToString()
+`.trim()
+
+function _parsePokerTable(title) {
+  if (!title || !title.includes('PokerStars') && !title.includes('Torneio') && !title.includes('Hold')) return null
+  // Tournament: "Torneio 4001866684 Mesa 1"
+  const mt = title.match(/Torneio\s+(\d+)\s+Mesa\s+(\d+)/i)
+  if (mt) return `${mt[1]} ${mt[2]}`
+  // Cash: "Mesa 12345678"
+  const mc = title.match(/Mesa\s+(\d+)/i)
+  if (mc) return mc[1]
+  return null
+}
+
+function pollForegroundTable() {
+  exec(`powershell -NoProfile -NonInteractive -Command "${PS_CMD.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`,
+    { timeout: 1500 },
+    (err, stdout) => {
+      if (err || !stdout) return
+      const table = _parsePokerTable(stdout.trim())
+      if (table && table !== _lastReportedTable) {
+        _lastReportedTable = table
+        fetch('http://127.0.0.1:8765/active-tables/set-current', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ table }),
+        }).catch(() => {})
+      }
+    }
+  )
+}
 
 // ── Backend startup (only in packaged mode) ───────────────────────────────────
 function startBackend() {
@@ -115,6 +162,9 @@ app.whenReady().then(async () => {
   mainWindow.webContents.once('did-finish-load', () => {
     setTimeout(setupAutoUpdater, 5000)
   })
+
+  // Poll PokerStars foreground window every 2s to track current table
+  setInterval(pollForegroundTable, 2000)
 })
 
 let _shuttingDown = false

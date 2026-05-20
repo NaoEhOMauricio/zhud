@@ -34,6 +34,7 @@ _observer = None   # watchdog Observer — stored so we can restart it
 
 # ── In-memory state ──────────────────────────────────────────────────────────
 _active_tables: dict = {}       # table_name -> {players, game_type, last_hand}
+_forced_current_table: dict = {"table": None, "at": None}   # set by Electron via window title
 _current_session: dict = {      # lightweight current session tracker
     "id": None,
     "start": None,
@@ -426,10 +427,17 @@ async def _build_active_tables_payload() -> list:
     hero = cfg_module.get_hero()
     hh_path = cfg_module.get_hh_path()
 
-    # Determine which table is truly current by checking the most recently
-    # modified HH file on disk — avoids relying on in-file timestamps (BRT quirks).
+    # Priority 1: Electron reported which PokerStars window is focused (most reliable)
     current_table_name: str | None = None
-    if hero and hh_path:
+    forced = _forced_current_table.get("table")
+    forced_at = _forced_current_table.get("at")
+    if forced and forced_at:
+        age = (datetime.utcnow() - forced_at).total_seconds()
+        if age < 60:   # fresh within 60s
+            current_table_name = forced
+
+    # Priority 2: fall back to most recently modified HH file
+    if not current_table_name and hero and hh_path:
         try:
             state = get_current_table_state(hh_path, hero)
             current_table_name = state.get("table") if state else None
@@ -763,6 +771,18 @@ async def player_hands(nickname: str, limit: int = 20):
         "actions":  json.loads(h.actions_json),
         "time":     h.hand_time.isoformat(),
     } for h in hands]
+
+
+# ─── Active table override (from Electron window title) ──────────────────────
+
+@app.post("/active-tables/set-current")
+async def set_current_table(body: dict):
+    """Electron sends the PokerStars foreground window table name here."""
+    table = (body.get("table") or "").strip()
+    if table:
+        _forced_current_table["table"] = table
+        _forced_current_table["at"] = datetime.utcnow()
+    return {"status": "ok", "table": table}
 
 
 # ─── Encounter history ────────────────────────────────────────────────────────
