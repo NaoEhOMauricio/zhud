@@ -187,7 +187,7 @@ export default function App() {
       <div className="drag-region flex items-center justify-between px-3 py-2 bg-gray-900 border-b border-gray-800 flex-shrink-0">
         <div className="flex items-center gap-2">
           <span className="text-green-400 font-bold text-sm tracking-wider">Z<span className="text-white">Hud</span></span>
-          <span className="text-gray-700 text-xs">v1.3.1</span>
+          <span className="text-gray-700 text-xs">v1.3.2</span>
           <span className={`w-2 h-2 rounded-full flex-shrink-0 pulse-live ${connected ? 'bg-green-500' : 'bg-red-500'}`} />
         </div>
         <div className="flex items-center gap-1">
