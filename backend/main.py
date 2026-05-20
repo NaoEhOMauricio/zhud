@@ -1067,13 +1067,16 @@ async def live_alerts_endpoint():
                 else:
                     table_players_with_stats.append({"nickname": nick, "hands": 0, "is_hero": is_hero})
 
-    return get_live_alerts(
+    result = get_live_alerts(
         hero_pos=table_state.get("hero_pos", "btn"),
         hero_stack_bb=table_state.get("hero_stack_bb", 40),
         table_players=table_players_with_stats,
         hero_nick=hero,
         table_state=table_state,
     )
+    # Add next-hand predicted position so frontend can show forward-looking range tips
+    result["hero_next_pos"] = table_state.get("hero_next_pos")
+    return result
 
 
 @app.get("/range-tips")

@@ -57,8 +57,10 @@ export default function RangeTips() {
     try {
       const r = await fetch(`${API}/live-alerts`)
       const d = await r.json()
-      const pos   = POS_MAP[d.hero_pos?.toUpperCase?.()] || null
-      const stack = d.hero_stack ? Math.round(d.hero_stack) : null
+      // Prefer next_pos (predicted for current hand) over hero_pos (last hand)
+      const rawPos = d.hero_next_pos || d.hero_pos
+      const pos    = POS_MAP[rawPos?.toUpperCase?.()] || null
+      const stack  = d.hero_stack ? Math.round(d.hero_stack) : null
       if (pos) {
         setAutoPos(pos)
         if (!manual) setPosition(pos)
@@ -126,7 +128,7 @@ export default function RangeTips() {
             </button>
           </div>
           <div className="text-xs text-gray-700 mt-0.5">
-            Baseado na mão anterior — use enquanto a próxima mão começa
+            Posição prevista para a mão atual (BTN rodou 1 cadeira)
           </div>
         </div>
       ) : (
