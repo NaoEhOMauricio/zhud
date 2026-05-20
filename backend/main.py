@@ -135,10 +135,11 @@ async def _queue_processor():
             hand_time_str: str = update.get("hand_time") or ""
             if table_name:
                 _active_tables[table_name] = {
-                    "table":      table_name,
-                    "game_type":  game_type,
-                    "players":    hand_players,
-                    "last_hand":  hand_time_str or datetime.utcnow().isoformat(),
+                    "table":         table_name,
+                    "game_type":     game_type,
+                    "players":       hand_players,
+                    "last_hand":     hand_time_str or datetime.utcnow().isoformat(),
+                    "last_processed": datetime.utcnow().isoformat(),  # server clock — reliable
                 }
 
             # Session tracking
@@ -433,7 +434,7 @@ async def _build_active_tables_payload() -> list:
     forced_at = _forced_current_table.get("at")
     if forced and forced_at:
         age = (datetime.utcnow() - forced_at).total_seconds()
-        if age < 60:   # fresh within 60s
+        if age < 300:   # valid for 5 min; Electron refreshes every 3s so this rarely expires
             current_table_name = forced
 
     # Priority 2: fall back to most recently modified HH file
@@ -773,16 +774,44 @@ async def player_hands(nickname: str, limit: int = 20):
     } for h in hands]
 
 
-# ─── Active table override (from Electron window title) ──────────────────────
+# ─── Active table override (from Electron window enumeration) ─────────────────
 
-@app.post("/active-tables/set-current")
-async def set_current_table(body: dict):
-    """Electron sends the PokerStars foreground window table name here."""
-    table = (body.get("table") or "").strip()
-    if table:
-        _forced_current_table["table"] = table
+@app.post("/active-tables/set-open")
+async def set_open_tables(body: dict):
+    """
+    Electron sends all open PokerStars game windows + the focused one.
+    We pick the best current table:
+      1. focused window if it matches a known active table
+      2. among all open windows, the one with most recent last_processed
+      3. fallback: the only open window that matches _active_tables
+    """
+    all_tables: list = body.get("all") or []
+    focused: str | None = body.get("focused")
+
+    # Filter to only tables we actually know about
+    known = set(_active_tables.keys())
+
+    # Priority 1: focused window is a known table
+    if focused and focused in known:
+        _forced_current_table["table"] = focused
         _forced_current_table["at"] = datetime.utcnow()
-    return {"status": "ok", "table": table}
+        return {"status": "ok", "current": focused, "via": "focused"}
+
+    # Priority 2: among all open windows, pick most recently processed known table
+    candidates = [t for t in all_tables if t in known]
+    if candidates:
+        best = max(candidates, key=lambda t: _active_tables[t].get("last_processed", ""))
+        _forced_current_table["table"] = best
+        _forced_current_table["at"] = datetime.utcnow()
+        return {"status": "ok", "current": best, "via": "last_processed"}
+
+    # Priority 3: single open window even if not yet in _active_tables
+    if len(all_tables) == 1:
+        _forced_current_table["table"] = all_tables[0]
+        _forced_current_table["at"] = datetime.utcnow()
+        return {"status": "ok", "current": all_tables[0], "via": "single"}
+
+    return {"status": "ok", "current": None, "via": "none"}
 
 
 # ─── Encounter history ────────────────────────────────────────────────────────

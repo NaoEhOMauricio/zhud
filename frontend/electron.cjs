@@ -7,49 +7,68 @@ let backendProcess = null
 let _lastReportedTable = null
 
 // ── PokerStars window detection ───────────────────────────────────────────────
-// Reads the FOREGROUND window title every 2s.
-// If it's a PokerStars game window, extracts the table name and tells the backend.
+// Every 3s: reads ALL open PokerStars game windows + the foreground window.
+// Sends both lists to the backend so it can pick the real current table.
 // Title format: "... - Torneio 4001866684 Mesa 1 - Logado como NaoEOMauricio - Mão #3/3"
-// Cash format:  "... - Mesa 12345678 - Logado como NaoEOMauricio"
-const PS_CMD = String.raw`
-Add-Type -TypeDefinition @'
-using System; using System.Runtime.InteropServices; using System.Text;
-public class U32 {
-  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-  [DllImport("user32.dll")] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
-}
-'@
-$h = [U32]::GetForegroundWindow(); $s = New-Object System.Text.StringBuilder(512)
-[U32]::GetWindowText($h, $s, 512); $s.ToString()
-`.trim()
+
+// Get all PokerStars game window titles + the foreground window title in one call
+const PS_POLL_CMD = [
+  'powershell', '-NoProfile', '-NonInteractive', '-Command',
+  [
+    // All PS game windows
+    '$all = Get-Process | Where-Object { $_.MainWindowTitle -match "Torneio|Hold.em" }',
+    '  | Select-Object -ExpandProperty MainWindowTitle',
+    '  | ForEach-Object { "ALL:" + $_ }',
+    // Foreground window
+    'Add-Type -TypeDefinition @\'',
+    'using System; using System.Runtime.InteropServices; using System.Text;',
+    'public class U32 {',
+    '  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();',
+    '  [DllImport("user32.dll")] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);',
+    '}',
+    '\'@',
+    '$h = [U32]::GetForegroundWindow(); $s = New-Object System.Text.StringBuilder(512)',
+    '[U32]::GetWindowText($h, $s, 512); "FG:" + $s.ToString()',
+    '$all',
+  ].join('; '),
+]
 
 function _parsePokerTable(title) {
-  if (!title || !title.includes('PokerStars') && !title.includes('Torneio') && !title.includes('Hold')) return null
+  if (!title) return null
   // Tournament: "Torneio 4001866684 Mesa 1"
   const mt = title.match(/Torneio\s+(\d+)\s+Mesa\s+(\d+)/i)
   if (mt) return `${mt[1]} ${mt[2]}`
-  // Cash: "Mesa 12345678"
-  const mc = title.match(/Mesa\s+(\d+)/i)
+  // Cash: "Mesa 12345678 - Logado como"
+  const mc = title.match(/Mesa\s+(\d{6,})/i)
   if (mc) return mc[1]
   return null
 }
 
-function pollForegroundTable() {
-  exec(`powershell -NoProfile -NonInteractive -Command "${PS_CMD.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`,
-    { timeout: 1500 },
-    (err, stdout) => {
-      if (err || !stdout) return
-      const table = _parsePokerTable(stdout.trim())
-      if (table && table !== _lastReportedTable) {
-        _lastReportedTable = table
-        fetch('http://127.0.0.1:8765/active-tables/set-current', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ table }),
-        }).catch(() => {})
+function pollAllPokerTables() {
+  exec(PS_POLL_CMD.join(' '), { timeout: 2500 }, (err, stdout) => {
+    if (err || !stdout) return
+    const lines = stdout.trim().split(/\r?\n/).map(l => l.trim()).filter(Boolean)
+
+    let focused = null
+    const allTables = []
+
+    for (const line of lines) {
+      if (line.startsWith('FG:')) {
+        focused = _parsePokerTable(line.slice(3))
+      } else if (line.startsWith('ALL:')) {
+        const t = _parsePokerTable(line.slice(4))
+        if (t) allTables.push(t)
       }
     }
-  )
+
+    if (allTables.length === 0 && !focused) return
+
+    fetch('http://127.0.0.1:8765/active-tables/set-open', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ all: allTables, focused }),
+    }).catch(() => {})
+  })
 }
 
 // ── Backend startup (only in packaged mode) ───────────────────────────────────
@@ -163,8 +182,8 @@ app.whenReady().then(async () => {
     setTimeout(setupAutoUpdater, 5000)
   })
 
-  // Poll PokerStars foreground window every 2s to track current table
-  setInterval(pollForegroundTable, 2000)
+  // Poll all open PokerStars windows every 3s to track current table
+  setInterval(pollAllPokerTables, 3000)
 })
 
 let _shuttingDown = false
