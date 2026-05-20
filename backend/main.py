@@ -24,7 +24,7 @@ import config as cfg_module
 from hero_analysis import analyze_hero
 from push_fold import get_recommendation, POSITION_ORDER, POSITION_LABELS
 from range_advisor import get_range_tips
-from exploit_alerts import get_live_alerts, table_quality
+from exploit_alerts import get_live_alerts, table_quality, get_current_table_state
 
 DEFAULT_HH_PATH = str(Path.home() / "AppData" / "Local" / "PokerStars" / "HandHistory")
 
@@ -229,6 +229,47 @@ async def _queue_processor():
                     "type": "active_tables_full",
                     "data": tables_payload,
                 })
+
+            # Live exploit alert for hero — fires after every new hand
+            hero_nick = cfg_module.get_hero()
+            hh_path   = cfg_module.get_hh_path()
+            if hero_nick and hh_path and hand_players and hero_nick in hand_players:
+                try:
+                    table_state = get_current_table_state(hh_path, hero_nick)
+                    if table_state:
+                        all_nicks = {i["nick"] for i in table_state["players_by_pos"].values()}
+                        players_with_stats = []
+                        async with AsyncSessionLocal() as _s2:
+                            for nick in all_nicks:
+                                _r = await _s2.execute(
+                                    select(PlayerStats).where(PlayerStats.nickname == nick)
+                                )
+                                _p = _r.scalar_one_or_none()
+                                _is_hero = nick == hero_nick
+                                if _p:
+                                    _st = _p.to_stats_dict()
+                                    _an = analyze_player(_st)
+                                    players_with_stats.append({**_st, **_an, "is_hero": _is_hero})
+                                else:
+                                    players_with_stats.append({"nickname": nick, "hands": 0, "is_hero": _is_hero})
+
+                        live = get_live_alerts(
+                            hero_pos=table_state.get("hero_pos", ""),
+                            hero_stack_bb=table_state.get("hero_stack_bb", 40),
+                            table_players=players_with_stats,
+                            hero_nick=hero_nick,
+                            table_state=table_state,
+                        )
+                        # Only push high-priority alerts (priority=1) as modal notifications
+                        top_alerts = [a for a in live.get("alerts", []) if a["priority"] == 1]
+                        if top_alerts:
+                            await _broadcast({
+                                "type": "live_alert",
+                                "data": {**top_alerts[0], "hero_pos": live["hero_pos"],
+                                         "hero_stack": live["hero_stack"]},
+                            })
+                except Exception as _exc:
+                    pass  # Never let alert errors break the hand processing
 
             # Re-cluster
             if _hands_since_cluster >= _CLUSTER_INTERVAL:
@@ -805,48 +846,56 @@ async def shutdown_endpoint():
 
 
 @app.get("/live-alerts")
-async def live_alerts_endpoint(position: str = "", stack_bb: float = 40):
+async def live_alerts_endpoint():
     """
-    Returns live exploit alerts for the current hand situation.
-    Position and stack are provided by the frontend (user selects).
+    Returns position-specific, player-specific exploit alerts.
+    Reads the latest HH hand to get exact positions + stacks automatically.
     """
     hero = cfg_module.get_hero()
-    tables = _get_active_tables()
+    hh_path = cfg_module.get_hh_path()
 
+    # Get exact current positions from most recent HH hand
+    table_state = {}
+    if hh_path and hero:
+        table_state = get_current_table_state(hh_path, hero)
+
+    # Build player stats for everyone at the table
     table_players_with_stats = []
-    if tables and hero:
-        hero_table = next(
-            (t for t in tables if hero in t.get("players", [])),
-            tables[0] if tables else None,
-        )
-        if hero_table:
-            async with AsyncSessionLocal() as session:
-                for nick in hero_table.get("players", []):
-                    r = await session.execute(
-                        select(PlayerStats).where(PlayerStats.nickname == nick)
-                    )
-                    p = r.scalar_one_or_none()
-                    is_hero = nick == hero
-                    if p:
-                        s = p.to_stats_dict()
-                        a = analyze_player(s)
-                        table_players_with_stats.append({
-                            **s, **a,
-                            "is_hero": is_hero,
-                            "position": "",  # position filled by client
-                        })
-                    else:
-                        table_players_with_stats.append({
-                            "nickname": nick,
-                            "hands": 0,
-                            "is_hero": is_hero,
-                        })
+    players_by_pos = table_state.get("players_by_pos", {})
+    all_nicks = {info["nick"] for info in players_by_pos.values()}
+
+    # Fallback: use active tables if HH read failed
+    if not all_nicks:
+        tables = _get_active_tables()
+        if tables and hero:
+            hero_table = next(
+                (t for t in tables if hero in t.get("players", [])),
+                tables[0] if tables else None,
+            )
+            if hero_table:
+                all_nicks = set(hero_table.get("players", []))
+
+    if all_nicks:
+        async with AsyncSessionLocal() as session:
+            for nick in all_nicks:
+                r = await session.execute(
+                    select(PlayerStats).where(PlayerStats.nickname == nick)
+                )
+                p = r.scalar_one_or_none()
+                is_hero = nick == hero
+                if p:
+                    s = p.to_stats_dict()
+                    a = analyze_player(s)
+                    table_players_with_stats.append({**s, **a, "is_hero": is_hero})
+                else:
+                    table_players_with_stats.append({"nickname": nick, "hands": 0, "is_hero": is_hero})
 
     return get_live_alerts(
-        hero_pos=position.lower(),
-        hero_stack_bb=stack_bb,
+        hero_pos=table_state.get("hero_pos", "btn"),
+        hero_stack_bb=table_state.get("hero_stack_bb", 40),
         table_players=table_players_with_stats,
         hero_nick=hero,
+        table_state=table_state,
     )
 
 

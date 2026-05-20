@@ -8,6 +8,7 @@ import TiltAlert from './components/TiltAlert'
 import SetupWizard from './components/SetupWizard'
 import UpdateBanner from './components/UpdateBanner'
 import LiveAlerts from './components/LiveAlerts'
+import AlertModal from './components/AlertModal'
 
 const API    = 'http://127.0.0.1:8765'
 const WS_URL = 'ws://127.0.0.1:8765/ws'
@@ -26,7 +27,8 @@ export default function App() {
   const [alwaysOnTop, setAlwaysOnTop]     = useState(false)
   const [showNickModal, setShowNickModal] = useState(false)
   const [nickInput, setNickInput]         = useState('')
-  const [tiltAlerts, setTiltAlerts]       = useState([])   // list of tilt alert objects
+  const [tiltAlerts, setTiltAlerts]       = useState([])
+  const [liveAlertModal, setLiveAlertModal] = useState(null)  // current modal alert
   const wsRef       = useRef(null)
   const searchTimer = useRef(null)
   // Refs so WebSocket handler can read latest values without reconnecting
@@ -83,6 +85,10 @@ export default function App() {
           const { nickname, cluster_id, cluster_label } = msg.data
           setRecentPlayers(prev => prev.map(p => p.nickname === nickname ? { ...p, cluster_id, cluster_label } : p))
           setSelectedPlayer(prev => prev?.nickname === nickname ? { ...prev, cluster_id, cluster_label } : prev)
+        }
+
+        if (msg.type === 'live_alert') {
+          setLiveAlertModal(msg.data)
         }
 
         if (msg.type === 'tilt_alert') {
@@ -181,7 +187,7 @@ export default function App() {
       <div className="drag-region flex items-center justify-between px-3 py-2 bg-gray-900 border-b border-gray-800 flex-shrink-0">
         <div className="flex items-center gap-2">
           <span className="text-green-400 font-bold text-sm tracking-wider">Z<span className="text-white">Hud</span></span>
-          <span className="text-gray-700 text-xs">v1.2.0</span>
+          <span className="text-gray-700 text-xs">v1.2.1</span>
           <span className={`w-2 h-2 rounded-full flex-shrink-0 pulse-live ${connected ? 'bg-green-500' : 'bg-red-500'}`} />
         </div>
         <div className="flex items-center gap-1">
@@ -195,6 +201,16 @@ export default function App() {
 
       {/* Update banner */}
       <UpdateBanner />
+
+      {/* Live exploit alert modal — appears after each new hand */}
+      {liveAlertModal && (
+        <div className="flex-shrink-0 animate-pulse-once">
+          <AlertModal
+            alert={liveAlertModal}
+            onDismiss={() => setLiveAlertModal(null)}
+          />
+        </div>
+      )}
 
       {/* Tilt alerts */}
       {tiltAlerts.length > 0 && <TiltAlert alerts={tiltAlerts} onDismiss={dismissTilt} />}
