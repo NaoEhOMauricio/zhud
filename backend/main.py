@@ -424,6 +424,18 @@ async def _build_active_tables_payload() -> list:
     if not tables:
         return []
     hero = cfg_module.get_hero()
+    hh_path = cfg_module.get_hh_path()
+
+    # Determine which table is truly current by checking the most recently
+    # modified HH file on disk — avoids relying on in-file timestamps (BRT quirks).
+    current_table_name: str | None = None
+    if hero and hh_path:
+        try:
+            state = get_current_table_state(hh_path, hero)
+            current_table_name = state.get("table") if state else None
+        except Exception:
+            pass
+
     result = []
     async with AsyncSessionLocal() as session:
         for t in tables:
@@ -439,7 +451,17 @@ async def _build_active_tables_payload() -> list:
                     players_data.append({**s, **a, "is_hero": nick == hero})
                 else:
                     players_data.append({"nickname": nick, "hands": 0, "is_hero": nick == hero})
-            result.append({**t, "players_data": players_data})
+            is_current = (current_table_name is not None and t["table"] == current_table_name)
+            result.append({**t, "players_data": players_data, "is_current": is_current})
+
+    # Fallback: if no table was flagged as current, mark the one with hero + most recent ts
+    if current_table_name is None or not any(t["is_current"] for t in result):
+        hero_tables = [t for t in result if any(p.get("is_hero") for p in t["players_data"])]
+        if hero_tables:
+            best = max(hero_tables, key=lambda t: t.get("last_hand", ""))
+            for t in result:
+                t["is_current"] = (t["table"] == best["table"])
+
     return result
 
 
@@ -621,23 +643,7 @@ def _scan_hh_for_active_tables() -> list:
 
 @app.get("/active-tables")
 async def active_tables_endpoint():
-    tables = _get_active_tables()
-    hero = cfg_module.get_hero()
-    result = []
-    for t in tables:
-        players_with_stats = []
-        async with AsyncSessionLocal() as session:
-            for nick in t["players"]:
-                r = await session.execute(select(PlayerStats).where(PlayerStats.nickname == nick))
-                p = r.scalar_one_or_none()
-                if p:
-                    s = p.to_stats_dict()
-                    a = analyze_player(s)
-                    players_with_stats.append({**s, **a, "is_hero": nick == hero})
-                else:
-                    players_with_stats.append({"nickname": nick, "hands": 0, "is_hero": nick == hero})
-        result.append({**t, "players_data": players_with_stats})
-    return result
+    return await _build_active_tables_payload()
 
 
 @app.get("/active-tables/comparison")

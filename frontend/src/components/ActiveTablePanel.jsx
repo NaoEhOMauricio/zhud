@@ -55,30 +55,22 @@ export default function ActiveTablePanel({ tables, heroNick, onSelectPlayer }) {
     )
   }
 
-  // Sort: most recent last_hand first
-  const sorted = [...tables].sort((a, b) =>
-    new Date(b.last_hand || 0) - new Date(a.last_hand || 0)
-  )
+  // Backend already sets is_current based on most recently modified HH file
+  // Sort: current table first, then by last_hand desc
+  const sorted = [...tables].sort((a, b) => {
+    if (a.is_current && !b.is_current) return -1
+    if (!a.is_current && b.is_current) return 1
+    return new Date(b.last_hand || 0) - new Date(a.last_hand || 0)
+  })
 
-  // "Mesa Atual" = most recent table where the HERO is playing.
-  // Fallback to timestamp-only if hero not found in any table.
-  const heroInTable = sorted.find(t =>
-    (t.players_data || []).some(p => p.nickname === heroNick)
-  )
-  const mostRecentTime = new Date(sorted[0]?.last_hand || 0)
-  const thirtyMinAgo  = new Date(Date.now() - 30 * 60 * 1000)
-  const currentTableName = heroInTable?.table
-    ?? (mostRecentTime > thirtyMinAgo ? sorted[0]?.table : null)
-
-  // Find current table to determine hero position (tab Range)
-  const currentTable = sorted.find(t => t.table === currentTableName)
+  const currentTable = sorted.find(t => t.is_current)
   const [showRange, setShowRange] = useState(false)
 
   return (
     <div className="flex-1 overflow-y-auto">
 
       {/* Range tips toggle — only shown when there's a current table */}
-      {currentTableName && (
+      {currentTable && (
         <div className="mx-2 mt-2 mb-1">
           <button
             onClick={() => setShowRange(s => !s)}
@@ -100,7 +92,7 @@ export default function ActiveTablePanel({ tables, heroNick, onSelectPlayer }) {
       )}
 
       {sorted.map((table, tableIdx) => {
-        const isCurrent = table.table === currentTableName
+        const isCurrent = !!table.is_current
         const players = table.players_data || []
 
         return (
