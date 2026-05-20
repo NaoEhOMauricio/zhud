@@ -23,6 +23,7 @@ from watcher import start_watching
 import config as cfg_module
 from hero_analysis import analyze_hero
 from push_fold import get_recommendation, POSITION_ORDER, POSITION_LABELS
+from range_advisor import get_range_tips
 
 DEFAULT_HH_PATH = str(Path.home() / "AppData" / "Local" / "PokerStars" / "HandHistory")
 
@@ -477,15 +478,74 @@ async def delete_note(note_id: int):
 # ─── Active tables ────────────────────────────────────────────────────────────
 
 def _get_active_tables() -> list:
-    # Use 12-hour window to handle timezone differences.
-    # PokerStars timestamps are in local time (BRT = UTC-3), but datetime.utcnow()
-    # is UTC. A 30-min window would incorrectly exclude BRT hands that are 3h "ahead".
-    # 12h safely covers any timezone while still excluding yesterday's hands.
     cutoff = datetime.utcnow() - timedelta(hours=12)
-    return [
+    result = [
         t for t in _active_tables.values()
         if datetime.fromisoformat(t["last_hand"]) > cutoff
     ]
+    if result:
+        return result
+    # Fallback: scan HH files directly when _active_tables is empty
+    return _scan_hh_for_active_tables()
+
+
+def _scan_hh_for_active_tables() -> list:
+    """
+    Direct fallback: read the 5 most recently modified HH files and extract
+    active table info. Used when _active_tables is empty (e.g. table_name
+    parsing failed in watcher, or backend just started).
+    """
+    try:
+        from pathlib import Path
+        from parser import HandParser
+
+        hh_path = cfg_module.get_hh_path()
+        if not hh_path or not os.path.exists(hh_path):
+            return []
+
+        files = sorted(
+            [f for f in Path(hh_path).glob("*.txt")],
+            key=lambda f: f.stat().st_mtime,
+            reverse=True,
+        )[:5]
+
+        parser = HandParser()
+        tables: dict = {}
+        cutoff = datetime.utcnow() - timedelta(hours=12)
+
+        for fpath in files:
+            try:
+                hands, _ = parser.parse_file_from(str(fpath), 0)
+                for hand in hands:
+                    if not hand.table_name:
+                        continue
+                    try:
+                        hand_dt = (
+                            datetime.fromisoformat(hand.hand_time)
+                            if hand.hand_time
+                            else datetime.utcnow()
+                        )
+                    except Exception:
+                        hand_dt = datetime.utcnow()
+
+                    if hand_dt < cutoff:
+                        continue
+
+                    existing = tables.get(hand.table_name)
+                    if not existing or hand_dt > datetime.fromisoformat(existing["last_hand"]):
+                        tables[hand.table_name] = {
+                            "table":     hand.table_name,
+                            "game_type": hand.game_type,
+                            "players":   [i["name"] for i in hand.players.values()],
+                            "last_hand": hand_dt.isoformat(),
+                        }
+            except Exception:
+                pass
+
+        return list(tables.values())
+    except Exception as exc:
+        print(f"[fallback] HH scan error: {exc}")
+        return []
 
 
 @app.get("/active-tables")
@@ -741,6 +801,48 @@ async def shutdown_endpoint():
         os.kill(os.getpid(), signal.SIGINT)
     asyncio.create_task(_do_shutdown())
     return {"status": "shutting down"}
+
+
+@app.get("/range-tips")
+async def range_tips_endpoint(position: str = "", stack_bb: float = 50):
+    """
+    Returns preflop range tips for the hero's current position.
+    Adjusts for opponents at the active table.
+    """
+    hero = cfg_module.get_hero()
+
+    # Get hero stats
+    hero_stats = None
+    async with AsyncSessionLocal() as session:
+        r = await session.execute(select(PlayerStats).where(PlayerStats.nickname == hero))
+        p = r.scalar_one_or_none()
+        if p:
+            hero_stats = p.to_stats_dict()
+
+    # Get opponents from active table
+    tables = _get_active_tables()
+    opponents = []
+    if tables and hero:
+        hero_table = next(
+            (t for t in tables if hero in t.get("players", [])),
+            tables[0],
+        )
+        nicks = [n for n in hero_table.get("players", []) if n != hero]
+        async with AsyncSessionLocal() as session:
+            for nick in nicks:
+                r2 = await session.execute(select(PlayerStats).where(PlayerStats.nickname == nick))
+                p2 = r2.scalar_one_or_none()
+                if p2 and (p2.hands_dealt or 0) >= 10:
+                    s = p2.to_stats_dict()
+                    a = analyze_player(s)
+                    opponents.append({**s, **a})
+
+    return get_range_tips(
+        hero_position=position,
+        opponents=opponents,
+        hero_stats=hero_stats,
+        hero_stack_bb=stack_bb,
+    )
 
 
 @app.get("/debug/tables")

@@ -15,7 +15,9 @@
       "Bash(awk '{print $5, $9}')",
       "Bash(git commit -m 'feat: v1.0.6 — primeiro deploy automatico via GitHub Actions *)",
       "Bash(git tag *)",
-      "Bash(git commit -m 'feat: v1.0.8 — banner de atualizacao visivel + botao reiniciar *)"
+      "Bash(git commit -m 'feat: v1.0.8 — banner de atualizacao visivel + botao reiniciar *)",
+      "PowerShell(Get-Process -Id 9404 -ErrorAction SilentlyContinue | Select-Object Name, Id, @{N='Path';E={$_.Path}})",
+      "PowerShell(Get-Process -Id 9404 2>&1; Get-Process | Where-Object {$_.Id -eq 9404})"
     ],
     "additionalDirectories": [
       "C:\\Users\\leona\\ZHud",

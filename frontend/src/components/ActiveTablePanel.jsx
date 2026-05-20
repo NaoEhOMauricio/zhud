@@ -1,4 +1,5 @@
 import ProfileBadge from './ProfileBadge'
+import RangeTips from './RangeTips'
 
 // Tilt badge shown inline next to player name on the Mesa tab
 function TiltChip({ tilt }) {
@@ -34,6 +35,8 @@ function StyleChip({ profile, hands }) {
   )
 }
 
+import { useState } from 'react'
+
 function isHU(table) {
   return (table.players_data || []).filter(p => !p.is_hero || true).length <= 2
 }
@@ -67,8 +70,35 @@ export default function ActiveTablePanel({ tables, heroNick, onSelectPlayer }) {
   const currentTableName = heroInTable?.table
     ?? (mostRecentTime > thirtyMinAgo ? sorted[0]?.table : null)
 
+  // Find current table to determine hero position (tab Range)
+  const currentTable = sorted.find(t => t.table === currentTableName)
+  const [showRange, setShowRange] = useState(false)
+
   return (
     <div className="flex-1 overflow-y-auto">
+
+      {/* Range tips toggle — only shown when there's a current table */}
+      {currentTableName && (
+        <div className="mx-2 mt-2 mb-1">
+          <button
+            onClick={() => setShowRange(s => !s)}
+            className={`w-full py-1.5 rounded text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 ${
+              showRange
+                ? 'bg-blue-900 text-blue-300 border border-blue-700'
+                : 'bg-gray-900 text-gray-500 border border-gray-800 hover:text-gray-300'
+            }`}
+          >
+            <span>🎯</span>
+            {showRange ? 'Ocultar dicas de range' : 'Dicas de range pré-flop'}
+          </button>
+          {showRange && (
+            <div className="bg-gray-950 border border-gray-800 rounded-b-lg -mt-px max-h-96 overflow-y-auto">
+              <RangeTips />
+            </div>
+          )}
+        </div>
+      )}
+
       {sorted.map((table, tableIdx) => {
         const isCurrent = table.table === currentTableName
         const players = table.players_data || []
