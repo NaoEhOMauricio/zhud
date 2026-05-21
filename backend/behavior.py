@@ -7,7 +7,7 @@ Zero cost: no external APIs, fully local.
 # ─── Profile classification ───────────────────────────────────────────────────
 
 def classify_profile(vpip: float, pfr: float, af: float, hands: int) -> str:
-    if hands < 20:
+    if hands < 8:
         return "Amostra pequena"
     gap = vpip - pfr
     if vpip < 13:

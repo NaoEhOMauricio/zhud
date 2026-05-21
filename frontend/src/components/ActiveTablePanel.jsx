@@ -16,8 +16,8 @@ function TiltChip({ tilt }) {
 
 // Style tag shown inline (Maniac, Passivo, etc.) with compact appearance
 function StyleChip({ profile, hands }) {
-  if (!profile || hands < 5) return (
-    <span className="text-xs text-gray-700 flex-shrink-0">sem dados</span>
+  if (!profile || hands < 3) return (
+    <span className="text-xs text-gray-600 flex-shrink-0 italic">novo</span>
   )
   const colors = {
     'Nit':             'text-blue-400',
@@ -27,10 +27,11 @@ function StyleChip({ profile, hands }) {
     'Calling Station': 'text-purple-400',
     'Maniac':          'text-red-400',
     'Passivo':         'text-blue-300',
+    'Amostra pequena': 'text-gray-500',
   }
   return (
     <span className={`text-xs font-semibold flex-shrink-0 ${colors[profile] || 'text-gray-400'}`}>
-      {profile}
+      {profile === 'Amostra pequena' ? `~${hands}m` : profile}
     </span>
   )
 }
@@ -161,17 +162,18 @@ export default function ActiveTablePanel({ tables, heroNick, onSelectPlayer, her
                     </div>
                   </div>
 
-                  {/* Row 2: key stats */}
-                  {!p.is_hero && (p.hands || 0) >= 5 && (
-                    <div className="text-xs text-gray-500 mt-0.5 flex gap-2">
-                      <span>VPIP <span className="text-gray-400">{p.vpip}%</span></span>
-                      <span>PFR <span className="text-gray-400">{p.pfr}%</span></span>
-                      <span>AF <span className="text-gray-400">{p.af}</span></span>
-                      <span>3BET <span className="text-gray-400">{p.threebet}%</span></span>
+                  {/* Row 2: key stats (show from 3+ hands, dim warning if < 8) */}
+                  {!p.is_hero && (p.hands || 0) >= 3 && (
+                    <div className={`text-xs mt-0.5 flex gap-2 ${(p.hands || 0) < 8 ? 'opacity-60' : ''}`}>
+                      <span className="text-gray-500">VPIP <span className="text-gray-400">{p.vpip}%</span></span>
+                      <span className="text-gray-500">PFR <span className="text-gray-400">{p.pfr}%</span></span>
+                      <span className="text-gray-500">AF <span className="text-gray-400">{p.af}</span></span>
+                      <span className="text-gray-500">3B <span className="text-gray-400">{p.threebet}%</span></span>
+                      {(p.hands || 0) < 8 && <span className="text-gray-700">({p.hands}m)</span>}
                     </div>
                   )}
-                  {!p.is_hero && (p.hands || 0) < 5 && (
-                    <div className="text-xs text-gray-700 mt-0.5">Sem dados — nova amostra</div>
+                  {!p.is_hero && (p.hands || 0) < 3 && (
+                    <div className="text-xs text-gray-700 mt-0.5 italic">1ª vez na mesa</div>
                   )}
                 </button>
               ))}

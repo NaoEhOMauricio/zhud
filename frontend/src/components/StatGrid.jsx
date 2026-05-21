@@ -43,15 +43,15 @@ function colorClass(key, val) {
 
 export default function StatGrid({ stats, trends = {} }) {
   return (
-    <div className="grid grid-cols-4 gap-1">
+    <div className="grid grid-cols-3 gap-1">
       {STATS.map(({ key, label, suffix }) => {
         const val = stats[key]
         const display = val != null ? `${val}${suffix}` : '—'
         const trend = trends[key]
         return (
-          <div key={key} className="bg-gray-800 rounded px-1 py-1.5 text-center">
-            <div className="text-gray-500 text-xs leading-none mb-1">{label}</div>
-            <div className={`text-sm font-bold leading-none ${colorClass(key, val)} flex items-center justify-center`}>
+          <div key={key} className="bg-gray-800 rounded px-2 py-1.5 flex items-center justify-between gap-1">
+            <span className="text-gray-500 text-xs">{label}</span>
+            <div className={`text-xs font-bold ${colorClass(key, val)} flex items-center gap-0.5`}>
               {display}
               {trend && <TrendBadge dir={trend.dir} delta={trend.delta} />}
             </div>
