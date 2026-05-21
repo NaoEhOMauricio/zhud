@@ -28,6 +28,7 @@ export default function App() {
   const [showNickModal, setShowNickModal] = useState(false)
   const [nickInput, setNickInput]         = useState('')
   const [tiltAlerts, setTiltAlerts]       = useState([])
+  const [heroHandCount, setHeroHandCount] = useState(0)
   const [liveAlertModal, setLiveAlertModal] = useState(null)  // current modal alert
   const wsRef       = useRef(null)
   const searchTimer = useRef(null)
@@ -78,7 +79,10 @@ export default function App() {
           })
           setSelectedPlayer(prev => prev?.nickname === upd.nickname ? { ...prev, ...upd } : prev)
           // Use refs to avoid stale closures without reconnecting
-          if (upd.nickname === heroNickRef.current && viewRef.current === 'hero') loadHero()
+          if (upd.nickname === heroNickRef.current) {
+            if (viewRef.current === 'hero') loadHero()
+            setHeroHandCount(c => c + 1)
+          }
         }
 
         if (msg.type === 'cluster_update') {
@@ -230,6 +234,7 @@ export default function App() {
         <ActiveTablePanel
           tables={activeTables}
           heroNick={heroNick}
+          heroHandCount={heroHandCount}
           onSelectPlayer={(nick) => { loadPlayer(nick); setView('players') }}
         />
       )}

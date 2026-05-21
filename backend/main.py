@@ -24,6 +24,7 @@ import config as cfg_module
 from hero_analysis import analyze_hero
 from push_fold import get_recommendation, POSITION_ORDER, POSITION_LABELS
 from range_advisor import get_range_tips
+from hand_evaluator import evaluate_hand, normalize_hand
 from exploit_alerts import get_live_alerts, table_quality, get_current_table_state
 
 DEFAULT_HH_PATH = str(Path.home() / "AppData" / "Local" / "PokerStars" / "HandHistory")
@@ -35,6 +36,7 @@ _observer = None   # watchdog Observer — stored so we can restart it
 # ── In-memory state ──────────────────────────────────────────────────────────
 _active_tables: dict = {}       # table_name -> {players, game_type, last_hand}
 _forced_current_table: dict = {"table": None, "at": None}   # set by Electron via window title
+_hero_manual_pos: dict = {"pos": None, "at": None}          # set by user in RangeTips
 _current_session: dict = {      # lightweight current session tracker
     "id": None,
     "start": None,
@@ -232,8 +234,17 @@ async def _queue_processor():
                     "data": tables_payload,
                 })
 
-            # Encounter tracking — record that hero sat with each villain
+            # Rotate manual position after each hero hand
             hero_nick = cfg_module.get_hero()
+            if hero_nick and hand_players and hero_nick in hand_players:
+                n_now = len(hand_players)
+                if _hero_manual_pos.get("pos"):
+                    _hero_manual_pos["n"] = n_now
+                    _rotate_manual_pos()
+                # Broadcast updated player count so frontend can sync table size
+                await _broadcast({"type": "table_player_count", "data": {"n": n_now}})
+
+            # Encounter tracking — record that hero sat with each villain
             if hero_nick and hand_players and hero_nick in hand_players:
                 villains = [n for n in hand_players if n != hero_nick]
                 if villains:
@@ -261,8 +272,18 @@ async def _queue_processor():
                                 else:
                                     players_with_stats.append({"nickname": nick, "hands": 0, "is_hero": _is_hero})
 
+                        # Priority: manual position set by user > HH rotation > HH last pos
+                        manual_age = (
+                            (datetime.utcnow() - _hero_manual_pos["at"]).total_seconds()
+                            if _hero_manual_pos.get("at") else 9999
+                        )
+                        if _hero_manual_pos.get("pos") and manual_age < 180:
+                            ws_pos = _hero_manual_pos["pos"]
+                        else:
+                            ws_pos = (table_state.get("hero_next_pos")
+                                      or table_state.get("hero_pos") or "")
                         live = get_live_alerts(
-                            hero_pos=table_state.get("hero_pos", ""),
+                            hero_pos=ws_pos,
                             hero_stack_bb=table_state.get("hero_stack_bb", 40),
                             table_players=players_with_stats,
                             hero_nick=hero_nick,
@@ -580,7 +601,7 @@ async def delete_note(note_id: int):
 # ─── Active tables ────────────────────────────────────────────────────────────
 
 def _get_active_tables() -> list:
-    cutoff = datetime.utcnow() - timedelta(hours=12)
+    cutoff = datetime.utcnow() - timedelta(hours=24)
     result = [
         t for t in _active_tables.values()
         if datetime.fromisoformat(t["last_hand"]) > cutoff
@@ -613,7 +634,7 @@ def _scan_hh_for_active_tables() -> list:
 
         parser = HandParser()
         tables: dict = {}
-        cutoff = datetime.utcnow() - timedelta(hours=12)
+        cutoff = datetime.utcnow() - timedelta(hours=24)
 
         for fpath in files:
             try:
@@ -772,6 +793,51 @@ async def player_hands(nickname: str, limit: int = 20):
         "actions":  json.loads(h.actions_json),
         "time":     h.hand_time.isoformat(),
     } for h in hands]
+
+
+# ─── Hero manual position (set by user in RangeTips) ─────────────────────────
+
+# Position rotation order for each table size (index = offset from BTN)
+_POS_ROTATION = {
+    9: ["btn","sb","bb","ep","ep","ep","hj","hj","co"],
+    8: ["btn","sb","bb","ep","ep","ep","hj","co"],
+    7: ["btn","sb","bb","ep","ep","hj","co"],
+    6: ["btn","sb","bb","ep","hj","co"],
+    5: ["btn","sb","bb","ep","co"],
+    4: ["btn","sb","bb","co"],
+    3: ["btn","sb","bb"],
+}
+
+
+@app.post("/hero/set-position")
+async def set_hero_position(body: dict):
+    """Frontend calls this when user manually selects their position in RangeTips."""
+    pos        = (body.get("pos")       or "").strip().lower()
+    pos_label  = (body.get("pos_label") or "").strip()
+    n_players  = int(body.get("n_players") or 6)
+    if pos:
+        _hero_manual_pos["pos"]       = pos
+        _hero_manual_pos["pos_label"] = pos_label
+        _hero_manual_pos["n"]         = n_players
+        _hero_manual_pos["at"]        = datetime.utcnow()
+    return {"status": "ok", "pos": pos}
+
+
+def _rotate_manual_pos():
+    """Advance hero's manual position by one hand (BTN moves forward one seat)."""
+    pos = _hero_manual_pos.get("pos")
+    n   = _hero_manual_pos.get("n", 6)
+    if not pos:
+        return
+    rotation = _POS_ROTATION.get(n, _POS_ROTATION[6])
+    # Find current index and move one step back (earlier position each hand)
+    try:
+        idx = next(i for i, p in enumerate(rotation) if p == pos)
+    except StopIteration:
+        return
+    prev_idx = (idx - 1) % len(rotation)
+    _hero_manual_pos["pos"]  = rotation[prev_idx]
+    _hero_manual_pos["at"]   = datetime.utcnow()
 
 
 # ─── Active table override (from Electron window enumeration) ─────────────────
@@ -1067,8 +1133,12 @@ async def live_alerts_endpoint():
                 else:
                     table_players_with_stats.append({"nickname": nick, "hands": 0, "is_hero": is_hero})
 
+    # Use predicted next position (current hand) — last hand's pos is one behind
+    effective_pos = (table_state.get("hero_next_pos")
+                     or table_state.get("hero_pos")
+                     or "btn")
     result = get_live_alerts(
-        hero_pos=table_state.get("hero_pos", "btn"),
+        hero_pos=effective_pos,
         hero_stack_bb=table_state.get("hero_stack_bb", 40),
         table_players=table_players_with_stats,
         hero_nick=hero,
@@ -1079,6 +1149,15 @@ async def live_alerts_endpoint():
     result["hero_next_label"] = table_state.get("hero_next_label")
     result["n_players"]       = table_state.get("n_players", 6)
     return result
+
+
+@app.get("/range-tips/evaluate")
+async def evaluate_hand_endpoint(
+    r1: str = "A", r2: str = "K", suited: bool = True,
+    position: str = "btn", stack_bb: float = 40, n_players: int = 6,
+):
+    """Evaluate specific hole cards against a position's range."""
+    return evaluate_hand(r1.upper(), r2.upper(), suited, position, stack_bb, n_players)
 
 
 @app.get("/range-tips")
@@ -1098,15 +1177,15 @@ async def range_tips_endpoint(position: str = "", stack_bb: float = 50,
         if p:
             hero_stats = p.to_stats_dict()
 
-    # Get opponents from active table
+    # Get opponents from active table (only the table hero is actually in)
     tables = _get_active_tables()
     opponents = []
     if tables and hero:
         hero_table = next(
             (t for t in tables if hero in t.get("players", [])),
-            tables[0],
+            None,
         )
-        nicks = [n for n in hero_table.get("players", []) if n != hero]
+        nicks = [n for n in (hero_table or {}).get("players", []) if n != hero]
         async with AsyncSessionLocal() as session:
             for nick in nicks:
                 r2 = await session.execute(select(PlayerStats).where(PlayerStats.nickname == nick))

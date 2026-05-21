@@ -95,10 +95,11 @@ BB_DEFENSE = [
 ]
 
 # ── Ajustes por stack depth (Hyper-Turbo) ────────────────────────────────────
+# Thresholds = limite INFERIOR de cada faixa (iteramos do maior pro menor)
 STACK_ADJUSTMENTS = [
-    (50, "Stack profundo — use ranges completos acima."),
-    (30, "Stack médio (20-50BB) — feche UTG/HJ, mantenha BTN/SB largos."),
-    (15, "Stack curto (10-20BB) — push/fold ativo. Raramente open-raise pequeno."),
+    (50, None),   # >= 50BB: stack profundo — sem aviso
+    (20, "Stack médio (20-50BB) — feche UTG/HJ, mantenha BTN/SB largos."),
+    (10, "Stack curto (10-20BB) — push/fold ativo. Raramente open-raise pequeno."),
     (0,  "Stack crítico (<10BB) — ALL-IN ou FOLD apenas. Veja aba Push/Fold."),
 ]
 
@@ -177,7 +178,7 @@ def get_range_tips(hero_position: str, opponents: list, hero_stats: dict = None,
     # ── 2. Ajuste de stack (Hyper-Turbo) ──────────────────────────────────────
     for threshold, msg in STACK_ADJUSTMENTS:
         if hero_stack_bb >= threshold:
-            if threshold < 50:
+            if msg:  # None = profundo, sem aviso
                 warnings.append({
                     "icon": "📉",
                     "title": f"Stack {hero_stack_bb:.0f}BB — ajuste de range",
@@ -192,19 +193,28 @@ def get_range_tips(hero_position: str, opponents: list, hero_stats: dict = None,
         pfr  = hero_stats.get("pfr", 0) or 0
         gap  = vpip - pfr
 
+        # Limp: gap grande entre VPIP e PFR (entra sem raise)
         if gap > 10:
             m = MISTAKES["limp"]
             warnings.append({"icon": "⚠", "title": m["title"], "body": m["body"], "detail": ""})
 
-        if pos == "ep" and vpip > 22:
+        # EP loose: usa VPIP específico da posição EP se disponível
+        ep_vpip = (hero_stats.get("pos_ep") or {}).get("vpip") or vpip
+        ep_hands = (hero_stats.get("pos_ep") or {}).get("hands", 0) or 0
+        if pos == "ep" and ep_vpip > 22 and (ep_hands >= 20 or vpip > 22):
             m = MISTAKES["ep_loose"]
             warnings.append({"icon": "⚠", "title": m["title"], "body": m["body"], "detail": ""})
 
-        if pos == "btn" and vpip < 32:
+        # BTN tight: usa VPIP específico do BTN se disponível
+        btn_vpip  = (hero_stats.get("pos_btn") or {}).get("vpip") or vpip
+        btn_hands = (hero_stats.get("pos_btn") or {}).get("hands", 0) or 0
+        if pos == "btn" and btn_vpip < 32 and (btn_hands >= 20 or vpip < 32):
             m = MISTAKES["btn_tight"]
             warnings.append({"icon": "💡", "title": m["title"], "body": m["body"], "detail": ""})
 
-        if pos == "bb" and (hero_stats.get("fold_to_cbet", 0) or 0) > 65:
+        # BB overfold: fold_to_3bet alto = não defende range de BB
+        bb_fold_3bet = (hero_stats.get("fold_to_3bet") or 0)
+        if pos == "bb" and bb_fold_3bet > 65:
             m = MISTAKES["bb_overfold"]
             warnings.append({"icon": "⚠", "title": m["title"], "body": m["body"], "detail": ""})
 

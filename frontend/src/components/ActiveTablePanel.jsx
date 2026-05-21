@@ -41,7 +41,7 @@ function isHU(table) {
   return (table.players_data || []).filter(p => !p.is_hero || true).length <= 2
 }
 
-export default function ActiveTablePanel({ tables, heroNick, onSelectPlayer }) {
+export default function ActiveTablePanel({ tables, heroNick, onSelectPlayer, heroHandCount }) {
   if (!tables || tables.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center px-4">
@@ -85,7 +85,7 @@ export default function ActiveTablePanel({ tables, heroNick, onSelectPlayer }) {
           </button>
           {showRange && (
             <div className="bg-gray-950 border border-gray-800 rounded-b-lg -mt-px max-h-96 overflow-y-auto">
-              <RangeTips />
+              <RangeTips heroHandCount={heroHandCount} />
             </div>
           )}
         </div>
