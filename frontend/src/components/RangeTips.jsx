@@ -180,7 +180,7 @@ function TipCard({ tip, defaultOpen = false }) {
   )
 }
 
-export default function RangeTips({ heroHandCount = 0 }) {
+export default function RangeTips({ heroHandCount = 0, livePos = null }) {
   const _saved = (() => { try { return JSON.parse(localStorage.getItem('zhud_range') || '{}') } catch { return {} } })()
   const [tableSize,    setTableSize]    = useState(_saved.tableSize || 6)
   const [posEntry,     setPosEntry]     = useState(_saved.posEntry  || null)
@@ -207,9 +207,23 @@ export default function RangeTips({ heroHandCount = 0 }) {
     }).catch(() => {})
   }, [posEntry, tableSize])
 
-  // When a new hand is processed for hero, rotate position automatically
+  // Auto-apply live position from backend (read directly from current hand header)
+  // This is exact and accounts for eliminations — overrides manual selection
   useEffect(() => {
-    if (heroHandCount > prevHandCount.current && posEntry) {
+    if (!livePos?.pos || !livePos?.label) return
+    const np = livePos.n || tableSize
+    const posMap = TABLE_POSITIONS[np] || TABLE_POSITIONS[6]
+    const entry = posMap.find(p => p.label === livePos.label)
+               || posMap.find(p => p.value === livePos.pos)
+    if (entry) {
+      if (np !== tableSize) setTableSize(np)
+      setPosEntry(entry)
+    }
+  }, [livePos])
+
+  // Fallback rotation when live position unavailable (rotate manually per hand)
+  useEffect(() => {
+    if (heroHandCount > prevHandCount.current && posEntry && !livePos) {
       const next = rotatePosition(posEntry.label, tableSize)
       setPosEntry(next)
     }
@@ -298,7 +312,7 @@ export default function RangeTips({ heroHandCount = 0 }) {
           <div className="text-xs text-gray-500">Sua posição agora</div>
           {posEntry && (
             <div className="text-xs text-gray-600">
-              Rotaciona automático por mão ↻
+              {livePos ? '● ao vivo' : 'Rotaciona automático ↻'}
             </div>
           )}
         </div>

@@ -29,6 +29,7 @@ export default function App() {
   const [nickInput, setNickInput]         = useState('')
   const [tiltAlerts, setTiltAlerts]       = useState([])
   const [heroHandCount, setHeroHandCount] = useState(0)
+  const [livePos, setLivePos]             = useState(null)  // {pos, label, n} from backend
   const [liveAlertModal, setLiveAlertModal] = useState(null)  // current modal alert
   const wsRef       = useRef(null)
   const searchTimer = useRef(null)
@@ -85,8 +86,8 @@ export default function App() {
           }
         }
 
-        if (msg.type === 'table_player_count') {
-          // Backend rotated the hero's manual position — RangeTips will re-fetch on next render
+        if (msg.type === 'live_position') {
+          setLivePos(msg.data)
         }
 
         if (msg.type === 'cluster_update') {
@@ -239,6 +240,7 @@ export default function App() {
           tables={activeTables}
           heroNick={heroNick}
           heroHandCount={heroHandCount}
+          livePos={livePos}
           onSelectPlayer={(nick) => { loadPlayer(nick); setView('players') }}
         />
       )}

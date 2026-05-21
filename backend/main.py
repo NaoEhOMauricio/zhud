@@ -395,6 +395,130 @@ async def _run_cluster_pass():
         print(f"[cluster] Error: {exc}")
 
 
+# ─── Live position poller ────────────────────────────────────────────────────
+# Reads the TAIL of the most recently modified HH file every 1s.
+# PokerStars writes the hand header (seats + button) immediately when the hand
+# starts — before any action. So we can detect the exact current position even
+# while the hand is in progress, without waiting for it to complete.
+
+import re as _re
+
+_RE_BTN   = _re.compile(r"Seat #(\d+) is the button")
+_RE_SEAT  = _re.compile(r"Seat (\d+): .+?\((\d+) in chips")
+_RE_HERO  = _re.compile(r"Seat (\d+): ([^\(]+)\(")
+
+_POS_MAPS_LIVE = {
+    9: {0:"btn",1:"sb",2:"bb",3:"ep",4:"ep",5:"ep",6:"hj",7:"hj",8:"co"},
+    8: {0:"btn",1:"sb",2:"bb",3:"ep",4:"ep",5:"ep",6:"hj",7:"co"},
+    7: {0:"btn",1:"sb",2:"bb",3:"ep",4:"ep",5:"hj",6:"co"},
+    6: {0:"btn",1:"sb",2:"bb",3:"ep",4:"hj",5:"co"},
+    5: {0:"btn",1:"sb",2:"bb",3:"ep",4:"co"},
+    4: {0:"btn",1:"sb",2:"bb",3:"co"},
+    3: {0:"btn",1:"sb",2:"bb"},
+}
+_LABEL_MAPS_LIVE = {
+    9: {0:"BTN",1:"SB",2:"BB",3:"UTG",4:"UTG+1",5:"UTG+2",6:"LJ",7:"HJ",8:"CO"},
+    8: {0:"BTN",1:"SB",2:"BB",3:"UTG",4:"UTG+1",5:"MP",6:"HJ",7:"CO"},
+    7: {0:"BTN",1:"SB",2:"BB",3:"UTG",4:"MP",5:"HJ",6:"CO"},
+    6: {0:"BTN",1:"SB",2:"BB",3:"UTG",4:"HJ",5:"CO"},
+    5: {0:"BTN",1:"SB",2:"BB",3:"UTG",4:"CO"},
+    4: {0:"BTN",1:"SB",2:"BB",3:"CO"},
+    3: {0:"BTN",1:"SB",2:"BB"},
+}
+
+_last_live_pos: dict = {}   # last broadcast position state
+
+
+def _read_current_hand_header(hh_path: str, hero_nick: str) -> dict:
+    """
+    Reads the tail of the most recently modified HH file and extracts
+    the current hand's seat/button info — works even mid-hand.
+    """
+    try:
+        from pathlib import Path
+        files = sorted(Path(hh_path).glob("*.txt"),
+                       key=lambda f: f.stat().st_mtime, reverse=True)[:3]
+        hero_lower = hero_nick.strip().lower()
+
+        for fpath in files:
+            try:
+                size = fpath.stat().st_size
+                with open(fpath, "r", encoding="utf-8-sig", errors="replace") as f:
+                    f.seek(max(0, size - 6000))
+                    tail = f.read()
+
+                # Find the last hand header
+                last_start = tail.rfind("PokerStars Hand #")
+                if last_start == -1:
+                    continue
+                block = tail[last_start:]
+
+                btn_m = _RE_BTN.search(block)
+                if not btn_m:
+                    continue
+                btn_seat = int(btn_m.group(1))
+
+                # Find hero's seat and all active seats
+                seats = []
+                hero_seat = None
+                for m in _RE_SEAT.finditer(block):
+                    sn, chips = int(m.group(1)), int(m.group(2))
+                    if chips > 0:
+                        seats.append(sn)
+                # Match hero name to seat
+                for m in _RE_HERO.finditer(block):
+                    sn, name = int(m.group(1)), m.group(2).strip()
+                    if name.lower() == hero_lower:
+                        hero_seat = sn
+                        break
+
+                if hero_seat is None or hero_seat not in seats:
+                    continue
+
+                seats_s = sorted(seats)
+                n = len(seats_s)
+                if btn_seat not in seats_s:
+                    continue
+                btn_i  = seats_s.index(btn_seat)
+                hero_i = seats_s.index(hero_seat)
+                offset = (hero_i - btn_i) % n
+
+                pos   = _POS_MAPS_LIVE.get(n, _POS_MAPS_LIVE[6]).get(offset, "ep")
+                label = _LABEL_MAPS_LIVE.get(n, _LABEL_MAPS_LIVE[6]).get(offset, "EP")
+                return {"pos": pos, "label": label, "n": n}
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return {}
+
+
+async def _live_position_task():
+    """Polls current hand header every 1s and broadcasts position changes."""
+    global _last_live_pos
+    while True:
+        try:
+            await asyncio.sleep(1)
+            hero = cfg_module.get_hero()
+            hh   = cfg_module.get_hh_path()
+            if not hero or not hh or not connected_clients:
+                continue
+            state = _read_current_hand_header(hh, hero)
+            if not state:
+                continue
+            # Only broadcast when position actually changes
+            if (state.get("pos") != _last_live_pos.get("pos")
+                    or state.get("n") != _last_live_pos.get("n")):
+                _last_live_pos = state
+                # Update manual position so alerts use it
+                _hero_manual_pos["pos"]   = state["pos"]
+                _hero_manual_pos["n"]     = state["n"]
+                _hero_manual_pos["at"]    = datetime.utcnow()
+                await _broadcast({"type": "live_position", "data": state})
+        except Exception:
+            pass
+
+
 # ─── App lifespan ─────────────────────────────────────────────────────────────
 
 def _resolve_hh_path() -> str:
@@ -428,6 +552,7 @@ async def lifespan(app: FastAPI):
     global _observer
     await init_db()
     asyncio.create_task(_queue_processor())
+    asyncio.create_task(_live_position_task())
     hh_path = _resolve_hh_path()
     _observer = start_watching(hh_path, update_queue)
     print(f"[server] ZHud backend at http://127.0.0.1:8765")
