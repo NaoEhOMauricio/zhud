@@ -197,6 +197,16 @@ export default function RangeTips({ heroHandCount = 0 }) {
     try { localStorage.setItem('zhud_range', JSON.stringify({ tableSize, posEntry, stackBb })) } catch {}
   }, [tableSize, posEntry, stackBb])
 
+  // Notify backend of confirmed position so live alerts use it (not the unreliable HH prediction)
+  useEffect(() => {
+    if (!posEntry) return
+    fetch(`${API}/hero/set-position`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pos: posEntry.value, pos_label: posEntry.label, n_players: tableSize }),
+    }).catch(() => {})
+  }, [posEntry, tableSize])
+
   // When a new hand is processed for hero, rotate position automatically
   useEffect(() => {
     if (heroHandCount > prevHandCount.current && posEntry) {

@@ -85,6 +85,10 @@ export default function App() {
           }
         }
 
+        if (msg.type === 'table_player_count') {
+          // Backend rotated the hero's manual position — RangeTips will re-fetch on next render
+        }
+
         if (msg.type === 'cluster_update') {
           const { nickname, cluster_id, cluster_label } = msg.data
           setRecentPlayers(prev => prev.map(p => p.nickname === nickname ? { ...p, cluster_id, cluster_label } : p))
