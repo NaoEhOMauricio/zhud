@@ -403,9 +403,9 @@ async def _run_cluster_pass():
 
 import re as _re
 
-_RE_BTN   = _re.compile(r"Seat #(\d+) is the button")
-_RE_SEAT  = _re.compile(r"Seat (\d+): .+?\((\d+) in chips")
-_RE_HERO  = _re.compile(r"Seat (\d+): ([^\(]+)\(")
+_RE_BTN     = _re.compile(r"Seat #(\d+) is the button")
+_RE_SEAT    = _re.compile(r"Seat (\d+): ([^\(]+)\((\d+) in chips")  # seat, name, chips
+_RE_HAND_ID = _re.compile(r"PokerStars Hand #(\d+)")
 
 _POS_MAPS_LIVE = {
     9: {0:"btn",1:"sb",2:"bb",3:"ep",4:"ep",5:"ep",6:"hj",7:"hj",8:"co"},
@@ -426,13 +426,15 @@ _LABEL_MAPS_LIVE = {
     3: {0:"BTN",1:"SB",2:"BB"},
 }
 
-_last_live_pos: dict = {}   # last broadcast position state
+_last_live_pos:    dict = {}
+_last_seen_hand_id: str  = ""   # hand ID of last broadcast — avoid re-broadcasting same hand
 
 
 def _read_current_hand_header(hh_path: str, hero_nick: str) -> dict:
     """
-    Reads the tail of the most recently modified HH file and extracts
-    the current hand's seat/button info — works even mid-hand.
+    Reads the tail of the most recently modified HH file.
+    Extracts hand_id, seat list, BTN, and hero position.
+    Returns {} if hero not found or hand incomplete.
     """
     try:
         from pathlib import Path
@@ -444,48 +446,53 @@ def _read_current_hand_header(hh_path: str, hero_nick: str) -> dict:
             try:
                 size = fpath.stat().st_size
                 with open(fpath, "r", encoding="utf-8-sig", errors="replace") as f:
-                    f.seek(max(0, size - 6000))
+                    f.seek(max(0, size - 8000))
                     tail = f.read()
 
-                # Find the last hand header
                 last_start = tail.rfind("PokerStars Hand #")
                 if last_start == -1:
                     continue
                 block = tail[last_start:]
 
+                # Extract hand ID
+                hid_m = _RE_HAND_ID.search(block)
+                if not hid_m:
+                    continue
+                hand_id = hid_m.group(1)
+
+                # BTN seat — from the Table line: "Seat #N is the button"
                 btn_m = _RE_BTN.search(block)
                 if not btn_m:
                     continue
                 btn_seat = int(btn_m.group(1))
 
-                # Find hero's seat and all active seats
-                seats = []
-                hero_seat = None
+                # Parse all seats: seat number, player name, chip count
+                # Sitting-out players still have their seat for BTN rotation
+                seats       = []
+                hero_seat   = None
                 for m in _RE_SEAT.finditer(block):
-                    sn, chips = int(m.group(1)), int(m.group(2))
+                    sn    = int(m.group(1))
+                    name  = m.group(2).strip()
+                    chips = int(m.group(3))
                     if chips > 0:
                         seats.append(sn)
-                # Match hero name to seat
-                for m in _RE_HERO.finditer(block):
-                    sn, name = int(m.group(1)), m.group(2).strip()
-                    if name.lower() == hero_lower:
+                    if name.lower() == hero_lower and chips > 0:
                         hero_seat = sn
-                        break
 
                 if hero_seat is None or hero_seat not in seats:
                     continue
+                if btn_seat not in seats:
+                    continue
 
                 seats_s = sorted(seats)
-                n = len(seats_s)
-                if btn_seat not in seats_s:
-                    continue
-                btn_i  = seats_s.index(btn_seat)
-                hero_i = seats_s.index(hero_seat)
-                offset = (hero_i - btn_i) % n
+                n       = len(seats_s)
+                btn_i   = seats_s.index(btn_seat)
+                hero_i  = seats_s.index(hero_seat)
+                offset  = (hero_i - btn_i) % n
 
                 pos   = _POS_MAPS_LIVE.get(n, _POS_MAPS_LIVE[6]).get(offset, "ep")
                 label = _LABEL_MAPS_LIVE.get(n, _LABEL_MAPS_LIVE[6]).get(offset, "EP")
-                return {"pos": pos, "label": label, "n": n}
+                return {"hand_id": hand_id, "pos": pos, "label": label, "n": n}
             except Exception:
                 pass
     except Exception:
@@ -494,8 +501,12 @@ def _read_current_hand_header(hh_path: str, hero_nick: str) -> dict:
 
 
 async def _live_position_task():
-    """Polls current hand header every 1s and broadcasts position changes."""
-    global _last_live_pos
+    """
+    Polls current hand header every 1s.
+    Only broadcasts when a NEW hand ID appears — avoids overwriting the
+    correctly-rotated position that the queue processor already computed.
+    """
+    global _last_live_pos, _last_seen_hand_id
     while True:
         try:
             await asyncio.sleep(1)
@@ -506,15 +517,21 @@ async def _live_position_task():
             state = _read_current_hand_header(hh, hero)
             if not state:
                 continue
-            # Only broadcast when position actually changes
-            if (state.get("pos") != _last_live_pos.get("pos")
-                    or state.get("n") != _last_live_pos.get("n")):
-                _last_live_pos = state
-                # Update manual position so alerts use it
-                _hero_manual_pos["pos"]   = state["pos"]
-                _hero_manual_pos["n"]     = state["n"]
-                _hero_manual_pos["at"]    = datetime.utcnow()
-                await _broadcast({"type": "live_position", "data": state})
+
+            hand_id = state.get("hand_id", "")
+
+            # Skip if this is the same hand we already reported
+            # (between hands: keep the rotation already computed by queue processor)
+            if hand_id == _last_seen_hand_id:
+                continue
+
+            # New hand detected — this is the exact position for the current hand
+            _last_seen_hand_id = hand_id
+            _last_live_pos     = state
+            _hero_manual_pos["pos"] = state["pos"]
+            _hero_manual_pos["n"]   = state["n"]
+            _hero_manual_pos["at"]  = datetime.utcnow()
+            await _broadcast({"type": "live_position", "data": state})
         except Exception:
             pass
 
